@@ -380,9 +380,9 @@ Both models have the same random effects, error model and `rho`, and are fitted 
 
 ```{r, fig.height = 2.0}
 compare <- list(l1_o = c("Italian", "English"))
-bind_rows(`GAM (lecture 4)` = get_difference(m_gam, "time", compare, length_out = 50),
-          `GAMM with AR1` = get_difference(m_dur, "time", compare, length_out = 50,
-                                           exclude_terms = "s(time,speaker)"),
+bind_rows(`GAM (lecture 4)` = as_tibble(get_difference(m_gam, "time", compare, length_out = 50)),
+          `GAMM with AR1` = as_tibble(get_difference(m_dur, "time", compare, length_out = 50,
+                                                     exclude_terms = "s(time,speaker)")),
           .id = "model") |>
   ggplot(aes(x = time, y = diff, colour = model, fill = model)) +
   geom_hline(yintercept = 0, colour = muted, linetype = "dashed") +
