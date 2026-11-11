@@ -1,0 +1,118 @@
+---
+title: "Theme preview"
+subtitle: "The buttercup theme of Advanced Statistics"
+author: "Dr Massimiliano Canzi"
+knit: (function(input, ...) rmarkdown::render(input, output_dir = file.path(dirname(input), "..", "docs")))
+output:
+  revealjs::revealjs_presentation:
+    theme: black
+    css: theme-buttercup.css
+    highlight: zenburn
+    incremental: true
+    transition: fade
+    background_transition: fade
+    self_contained: true
+    reveal_options:
+      width: 1050
+      height: 700
+      slideNumber: "c/t"
+      showSlideNumber: all
+      controls: true
+      touch: true
+      transitionSpeed: fast
+      navigationMode: linear
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
+                      fig.width = 10, fig.height = 4.4, out.width = "100%")
+library(tidyverse)
+
+source("slides_setup.R", local = knitr::knit_global())
+```
+
+# Partial pooling
+
+<style>
+  :root {
+    --footer-text:  "Theme preview";
+    --qr:           `r qr_css`;
+    --lecture:      `r lecture_label`;
+  }
+</style>
+
+::: {.fact}
+`Did you know:` William Sealy Gosset published the t-test in 1908 under the pen name [Student], while working as a brewer for Guinness in Dublin.
+
+_Source: Student (1908), Biometrika_
+:::
+
+## Text and emphasis
+
+- Body text, with an [emphasised term]{.hl} and a [link](https://mcanzi.github.io)
+- Inline code such as `lmer()` and **bold** text
+- A second level:
+    - nested item
+
+. . .
+
+A paragraph after a pause, to check line length and spacing on the slide.
+
+## Code and output
+
+```{r code, echo = TRUE}
+d <- tibble(group = rep(c("a", "b"), each = 5), y = c(3, 4, 5, 4, 6, 7, 8, 6, 9, 8))
+d |>
+  group_by(group) |>
+  summarise(mean = mean(y), sd = sd(y))
+```
+
+## A figure
+
+```{r pooling, fig.height = 3.9}
+set.seed(27)
+pp <- tibble(id = sprintf("S%02d", 1:14), n = sample(3:30, 14, replace = TRUE)) |>
+  mutate(true = rnorm(14, 500, 40),
+         raw = true + rnorm(14, 0, 120 / sqrt(n)),
+         pooled = (raw * n + 500 * 8) / (n + 8),
+         id = fct_reorder(id, raw))
+ggplot(pp, aes(y = id)) +
+  geom_vline(xintercept = 500, colour = muted, linetype = "dashed") +
+  geom_segment(aes(x = raw, xend = pooled, yend = id), colour = vine, linewidth = 1) +
+  geom_point(aes(x = raw, colour = "No pooling"), size = 3.5) +
+  geom_point(aes(x = pooled, colour = "Partial pooling"), size = 3.5) +
+  scale_colour_manual(values = c(`No pooling` = pandan, `Partial pooling` = kingfisher)) +
+  labs(x = "Mean reaction time (ms)", y = NULL, colour = NULL)
+```
+
+Simulated data. Speakers with few observations move furthest toward the grand mean.
+
+## A table
+
+| Model | Random effects | AIC |
+|---|---|---|
+| m0 | intercepts by subject | 4210.3 |
+| m1 | intercepts and slopes by subject | 4187.9 |
+| m2 | m1, plus intercepts by item | 4176.4 |
+
+## Summary
+
+::: {.takeaway}
+- [Partial pooling]{.hl} pulls noisy group estimates toward the grand mean
+- Groups with less data move further
+:::
+
+## References {.refs}
+
+- Student (1908). The probable error of a mean. _Biometrika_, 6(1), 1–25.
+
+## Slides and code
+
+<div class="qr-block">
+<img src="`r qr_uri`" alt="QR code linking to these slides">
+<div>
+<p>These slides</p>
+<p class="qr-link">mcanzi.github.io/ss27_advanced_statistics/<wbr>`r lecture_file`</p>
+<p>Code and all sessions</p>
+<p class="qr-link">github.com/mcanzi/ss27_advanced_statistics</p>
+</div>
+</div>
