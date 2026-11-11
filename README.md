@@ -6,7 +6,7 @@ Slides for *Advanced Statistics* (Dr Massimiliano Canzi, Department of Linguisti
 
 Knit `source/render_all.Rmd` to render every session into `docs`, which GitHub Pages serves. Knitting a single session also writes its HTML into `docs`. All sessions use the buttercup theme (`source/theme-buttercup.css`): slate blue and ice, salmon accents, and glacier buttercups in the background. `source/slides_setup.R` sets the plot colours to match it. The fonts are in `source/fonts` and are embedded in each HTML file.
 
-Requires `tidyverse` and `revealjs`; optional: `qrcode` (QR codes), `ragg` and `systemfonts` (Atkinson Hyperlegible in the figures).
+Requires `tidyverse`, `revealjs`, `broom`, `lme4`, `lmerTest`, `patchwork`, `ggeffects`, `ggrepel` and `ggridges`; optional: `qrcode` (QR codes), `ragg` and `systemfonts` (Atkinson Hyperlegible in the figures).
 
 ## License
 

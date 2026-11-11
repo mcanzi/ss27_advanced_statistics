@@ -300,7 +300,9 @@ ggplot(words, aes(x = log_freq, y = length)) +
 cor(words$log_freq, words$length)
 ```
 
-. . .
+Frequent words tend to be short.
+
+## Collinearity
 
 - When predictors overlap, each coefficient rests on the part of the predictor the others do not share, so standard errors grow. This is [collinearity]{.hl}
 - Check it with a correlation matrix or variance inflation factors (`car::vif()`), and think about which predictors the design really needs

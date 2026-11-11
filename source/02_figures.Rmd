@@ -1,0 +1,541 @@
+---
+title: "Figures with ggplot2"
+subtitle: "The grammar of graphics and customisation"
+author: "Dr Massimiliano Canzi"
+knit: (function(input, ...) rmarkdown::render(input, output_dir = file.path(dirname(input), "..", "docs")))
+output:
+  revealjs::revealjs_presentation:
+    theme: black
+    css: theme-buttercup.css
+    highlight: zenburn
+    mathjax: null
+    incremental: true
+    transition: fade
+    background_transition: fade
+    self_contained: true
+    reveal_options:
+      width: 1050
+      height: 700
+      slideNumber: "c/t"
+      showSlideNumber: all
+      controls: true
+      touch: true
+      transitionSpeed: fast
+      navigationMode: linear
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                      comment = "",
+                      fig.width = 10, fig.height = 4.4, out.width = "100%")
+
+library(tidyverse)
+library(patchwork)
+
+source("slides_setup.R", local = knitr::knit_global())
+
+options(width = 70, pillar.print_min = 4, pillar.print_max = 4)
+```
+
+# Figures with ggplot2
+
+<style>
+  :root {
+    --footer-text:  "Figures with ggplot2";
+    --qr:           `r qr_css`;
+    --lecture:      `r lecture_label`;
+  }
+</style>
+
+::: {.fact}
+`Did you know:` snowshoe hares are brown in summer and white in winter. The timing of the two moults is thought to be set mainly by [day length]{.hl}, not by the snow on the ground.
+
+_Source: Mills et al. (2013), PNAS_
+:::
+
+## Why two lectures on figures
+
+You have made plots with `ggplot2` before, in Statistics (for Linguists) or in the data visualisation workshop. This lecture and the next one go through the basics quickly and spend the time on what makes a figure good enough for a thesis or a paper.
+
+. . .
+
+- Today: the grammar, then control over every part of a plot: colour, shape, legends, scales and themes
+- Next time: honest figures, plotting models, and preparing figures for publication
+
+## Today
+
+1. The grammar in five minutes
+2. Colour
+3. Shape, size and transparency
+4. Scales, labels and legends
+5. Themes
+
+## The data {.smaller}
+
+A simulated production study: 20 speakers, 10 with English and 10 with Italian as their first language, read 12 words for each of six English vowels. The vowels are named by Wells's lexical sets.
+
+```{r}
+set.seed(2028)
+speakers <- tibble(speaker = sprintf("S%02d", 1:20),
+                   l1 = rep(c("English", "Italian"), each = 10),
+                   gender = rep(c("female", "male"), times = 10),
+                   scale = if_else(gender == "female", 1.15, 1) * rnorm(20, 1, 0.04))
+targets <- tibble(vowel = c("FLEECE", "KIT", "DRESS", "TRAP", "START", "GOOSE"),
+                  F1 = c(290, 410, 560, 700, 720, 320),
+                  F2 = c(2250, 1950, 1800, 1650, 1150, 1250),
+                  dur = c(150, 90, 100, 140, 170, 160))
+vowels <- crossing(speakers, targets, token = 1:12) |>
+  mutate(F1 = case_when(l1 == "Italian" & vowel == "KIT" ~ 330,
+                        l1 == "Italian" & vowel == "TRAP" ~ 620, .default = F1),
+         F2 = case_when(l1 == "Italian" & vowel == "KIT" ~ 2150,
+                        l1 == "Italian" & vowel == "TRAP" ~ 1720, .default = F2),
+         dur = if_else(l1 == "Italian", 125, dur),
+         F1 = round(F1 * scale + rnorm(n(), 0, 35)),
+         F2 = round(F2 * scale + rnorm(n(), 0, 110)),
+         duration = round(dur * rnorm(n(), 1, 0.15)),
+         vowel = factor(vowel, levels = targets$vowel)) |>
+  select(speaker, l1, gender, vowel, token, F1, F2, duration)
+```
+
+## The data
+
+```{r}
+vowels
+```
+
+. . .
+
+What we built in: the Italian speakers merge KIT with FLEECE, move TRAP toward DRESS, and make all vowels about the same length.
+
+# The grammar in five minutes
+
+::: {.fact}
+`Did you know:` Mills and colleagues followed 148 radio-collared snowshoe hares every week for three years. A hare counted as [mismatched]{.hl} when its coat was at least 60 percentage points whiter or browner than the ground around it.
+
+_Source: Mills et al. (2013), PNAS_
+:::
+
+## Data, aesthetics, geometry
+
+Every `ggplot2` figure is built from the same parts:
+
+- [data]{.hl}: a data frame, one row per observation
+- [aesthetics]{.hl}: which variables go to `x`, `y`, colour, size, and so on, inside `aes()`
+- [geometries]{.hl}: how each row is drawn: points, lines, bars, boxes
+- then optional [scales]{.hl}, [facets]{.hl}, [coordinates]{.hl} and a [theme]{.hl}, added with `+`
+
+## A first plot
+
+```{r, fig.height = 3.4}
+ggplot(vowels, aes(x = F2, y = F1)) +
+  geom_point()
+```
+
+Correct, but not yet a vowel chart.
+
+## A vowel chart
+
+```{r, fig.height = 2.8}
+ggplot(vowels, aes(x = F2, y = F1, colour = vowel)) +
+  geom_point(alpha = 0.3) +
+  scale_x_reverse(position = "top") +
+  scale_y_reverse(position = "right")
+```
+
+Reversed axes put front vowels on the left and high vowels at the top, as in the IPA chart.
+
+## Layers stack {.smaller}
+
+```{r, fig.height = 2.7}
+vowel_means <- summarise(vowels, F1 = mean(F1), F2 = mean(F2), .by = c(l1, vowel))
+ggplot(vowels, aes(x = F2, y = F1, colour = vowel)) +
+  geom_point(alpha = 0.15) +
+  stat_ellipse(level = 0.68) +
+  geom_text(data = vowel_means, aes(label = vowel), fontface = "bold", size = 5) +
+  scale_x_reverse(position = "top") +
+  scale_y_reverse(position = "right") +
+  theme(legend.position = "none")
+```
+
+Each layer can take its own data. The mappings in `ggplot()` apply to every layer that does not override them.
+
+## Facets {.smaller}
+
+```{r, fig.height = 3.1}
+ggplot(vowels, aes(x = F2, y = F1, colour = vowel)) +
+  stat_ellipse(level = 0.68, linewidth = 1) +
+  geom_text(data = vowel_means, aes(label = vowel), size = 4) +
+  scale_x_reverse(position = "top") + scale_y_reverse(position = "right") +
+  facet_wrap(~ l1) + theme(legend.position = "none")
+```
+
+Small multiples: same axes, one panel per group. KIT and FLEECE overlap in the Italian panel.
+
+## Choosing a geometry
+
+| What you show | Geometry |
+|:--|:--|
+| One continuous variable | `geom_histogram()`, `geom_density()` |
+| A continuous variable by group | `geom_boxplot()`, `geom_violin()`, plus the points |
+| Two continuous variables | `geom_point()`, `geom_smooth()` |
+| Change over time or along a scale | `geom_line()` |
+| Counts of categories | `geom_bar()`, or `geom_col()` for counts you already have |
+
+## Distributions by group {.smaller}
+
+```{r, fig.height = 3.2}
+ggplot(vowels, aes(x = vowel, y = duration, fill = l1)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.5) +
+  geom_point(aes(colour = l1), size = 0.6, alpha = 0.3,
+             position = position_jitterdodge(jitter.width = 0.15, dodge.width = 0.75)) +
+  labs(x = NULL, y = "Duration (ms)", fill = NULL, colour = NULL)
+```
+
+`position_jitterdodge()` puts the points over the right box. English speakers contrast long and short vowels; Italian speakers do not.
+
+# Colour
+
+::: {.fact}
+`Did you know:` in the same Montana study, the hares did not start their moults earlier or later when the snow came late or melted early. Only the [rate]{.hl} of the spring moult changed a little.
+
+_Source: Mills et al. (2013), PNAS_
+:::
+
+## Mapping or setting?
+
+```{r, fig.height = 2.6}
+p_map <- ggplot(vowel_means, aes(F2, F1)) + geom_point(aes(colour = "blue"), size = 3)
+p_set <- ggplot(vowel_means, aes(F2, F1)) + geom_point(colour = "blue", size = 3)
+p_map + p_set
+```
+
+- Inside `aes()`, `"blue"` is treated as data: a variable with one value, which gets the first colour of the scale and a legend
+- Outside `aes()`, it is a fixed colour for the layer
+
+## `colour` or `fill`?
+
+- Points, lines and text have a `colour`
+- Areas (bars, boxes, violins, ribbons) have a `fill`, and `colour` is their outline
+- Shapes 21 to 25 are points with both: `colour` for the border, `fill` for the inside
+- `alpha` sets transparency for both
+
+## Three kinds of palette
+
+```{r palette-kinds, echo = FALSE, fig.height = 3.4}
+pals <- bind_rows(
+  tibble(type = "Qualitative: categories without an order", col = RColorBrewer::brewer.pal(7, "Dark2")),
+  tibble(type = "Sequential: from low to high", col = RColorBrewer::brewer.pal(7, "Blues")),
+  tibble(type = "Diverging: below and above a meaningful midpoint", col = RColorBrewer::brewer.pal(7, "RdBu"))
+) |>
+  mutate(i = rep(1:7, 3), type = fct_inorder(type))
+ggplot(pals, aes(i, 0, fill = col)) +
+  geom_tile(colour = floor_col, linewidth = 2) +
+  scale_fill_identity() +
+  facet_wrap(~ type, ncol = 1) +
+  theme_void(base_family = plot_font) +
+  theme(strip.text = element_text(colour = mist, hjust = 0, size = 15, margin = margin(t = 6, b = 4)))
+```
+
+The type of variable decides the type of palette.
+
+## Your own colours {.smaller}
+
+```{r, fig.height = 3.2}
+l1_colours <- c(English = "#E69F00", Italian = "#56B4E9")
+ggplot(vowels, aes(x = vowel, y = duration, fill = l1)) +
+  geom_boxplot(outlier.shape = NA, colour = mist) +
+  scale_fill_manual(values = l1_colours) +
+  labs(x = NULL, y = "Duration (ms)", fill = NULL)
+```
+
+Name the values. The colours then stay with their categories when a group is dropped or the order changes, and you can reuse `l1_colours` in every figure of a paper.
+
+## Palettes for every reader
+
+- Red–green colour-vision deficiencies are common, especially among men: in a lecture hall, assume several readers cannot tell your red from your green
+- Figures are also printed in greyscale and shown on dim projectors
+- [Okabe–Ito]{.hl}: eight colours that stay distinct for the common deficiencies, built into `R` (4.0 or later)
+
+```{r}
+okabe <- unname(palette.colors(palette = "Okabe-Ito"))
+okabe
+```
+
+## Okabe–Ito in practice {.smaller}
+
+```{r, fig.height = 3.3}
+ggplot(vowels, aes(x = F2, y = F1, colour = vowel)) +
+  geom_point(alpha = 0.3) +
+  scale_colour_manual(values = okabe[2:7]) +
+  scale_x_reverse(position = "top") + scale_y_reverse(position = "right") +
+  guides(colour = guide_legend(nrow = 1, override.aes = list(alpha = 1, size = 4)))
+```
+
+The first colour is black, which disappears on a dark background. `override.aes` makes the legend keys solid while the points stay transparent.
+
+## Sequential {.smaller}
+
+```{r, fig.height = 3.1}
+ggplot(vowels, aes(x = F2, y = F1, colour = duration)) +
+  geom_point(alpha = 0.6) +
+  scale_colour_viridis_c(option = "magma", begin = 0.2) +
+  scale_x_reverse(position = "top") + scale_y_reverse(position = "right") +
+  facet_wrap(~ l1) +
+  labs(colour = "Duration (ms)")
+```
+
+Viridis palettes rise evenly in lightness, so they also work in greyscale. `begin` drops the darkest end, which would vanish on this background.
+
+## Diverging {.smaller}
+
+```{r, fig.height = 2.5}
+vowels |>
+  summarise(duration = mean(duration), .by = c(speaker, l1, vowel)) |>
+  mutate(relative = duration - mean(duration), .by = speaker) |>
+  ggplot(aes(x = vowel, y = speaker, fill = relative)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "#2166AC", mid = "white", high = "#B2182B", midpoint = 0,
+                       limits = \(x) c(-1, 1) * max(abs(x))) +
+  facet_grid(l1 ~ ., scales = "free_y") +
+  labs(x = NULL, y = NULL, fill = "ms from the\nspeaker's mean")
+```
+
+Diverging palettes suit a meaningful midpoint. Symmetric limits make equal distances from zero equally dark.
+
+## Highlight instead {.smaller}
+
+```{r, fig.height = 3.1}
+focus <- filter(vowels, vowel %in% c("FLEECE", "KIT"))
+ggplot(vowels, aes(x = F2, y = F1)) +
+  geom_point(colour = vine, alpha = 0.5) +
+  geom_point(data = focus, aes(colour = vowel), alpha = 0.5) +
+  scale_x_reverse(position = "top") + scale_y_reverse(position = "right") +
+  facet_wrap(~ l1)
+```
+
+With more than six to eight categories, colour stops working. Colour what the text is about and leave the rest grey.
+
+# Shape, size and transparency
+
+::: {.fact}
+`Did you know:` mismatched snowshoe hares, white on brown ground or brown on snow, had up to [7% lower]{.hl} weekly survival than hares whose coat matched the ground.
+
+_Source: Zimova, Mills & Nowak (2016), Ecology Letters_
+:::
+
+## Ranking the channels
+
+```{r channels, echo = FALSE, fig.height = 3.3}
+tibble(channel = c("position on a common axis", "length", "angle and slope", "area (size)",
+                   "colour lightness", "colour hue"),
+       rank = 6:1) |>
+  mutate(channel = fct_reorder(channel, rank)) |>
+  ggplot(aes(x = rank, y = channel)) +
+  geom_col(fill = kingfisher, width = 0.65) +
+  labs(x = "more accurate for numbers  →", y = NULL) +
+  theme(axis.text.x = element_blank(), panel.grid.major.y = element_blank(),
+        axis.text.y = element_text(size = 15, colour = mist))
+```
+
+Readers compare [positions]{.hl} best and colours worst (after Cleveland & McGill, 1984). Put the comparison that matters on `x` or `y`.
+
+## Redundant coding {.smaller}
+
+```{r, fig.height = 3.1}
+speaker_means <- summarise(vowels, F1 = mean(F1), F2 = mean(F2), .by = c(speaker, l1, vowel))
+ggplot(speaker_means, aes(x = F2, y = F1, fill = l1, shape = l1)) +
+  geom_point(size = 3, colour = floor_col, stroke = 0.6) +
+  scale_shape_manual(values = c(English = 21, Italian = 24)) +
+  scale_fill_manual(values = l1_colours) +
+  scale_x_reverse(position = "top") + scale_y_reverse(position = "right")
+```
+
+Colour and shape show the same variable, so the groups survive greyscale printing. Shapes 21–25 take a `fill` and an outline `colour`.
+
+## Transparency and overplotting
+
+```{r, fig.height = 3.1}
+p_solid <- ggplot(vowels, aes(F2, F1)) + geom_point(colour = kingfisher)
+p_alpha <- ggplot(vowels, aes(F2, F1)) + geom_point(colour = kingfisher, alpha = 0.1)
+p_solid + p_alpha
+```
+
+With 1,440 points, solid points hide where the data are dense. Transparent points show it.
+
+## Size
+
+- Size is read as [area]{.hl}, and readers underestimate differences in area
+- Map size only to a continuous variable, never to categories
+- `scale_size_area()` makes zero have no size, so area is proportional to the value
+- Line width (`linewidth`) and line type can separate a few groups of lines, alongside colour
+
+# Scales, labels and legends
+
+::: {.fact}
+`Did you know:` for western Montana, Mills and colleagues projected [29 to 35]{.hl} fewer days of snow cover per year by the middle of this century, and 40 to 69 fewer by its end.
+
+_Source: Mills et al. (2013), PNAS_
+:::
+
+## What a scale does
+
+Every aesthetic has a scale: it turns data values into positions, colours or sizes, and draws the axis or legend that reads them back.
+
+- `scale_<aesthetic>_<type>()`: `scale_x_continuous()`, `scale_colour_manual()`, `scale_fill_viridis_c()`
+- `name`, `breaks`, `labels` and `limits` work the same way in all of them
+- `labs()` is a shortcut for the names
+
+## Breaks and labels {.smaller}
+
+```{r, fig.height = 3.2}
+ggplot(vowels, aes(x = F2, y = F1, colour = vowel)) +
+  geom_point(alpha = 0.2) +
+  scale_x_reverse(position = "top", breaks = seq(800, 2800, by = 400),
+                  labels = scales::label_comma(suffix = " Hz")) +
+  scale_y_reverse(position = "right", breaks = seq(200, 1000, by = 200),
+                  labels = scales::label_comma(suffix = " Hz")) +
+  labs(x = "F2", y = "F1", colour = NULL)
+```
+
+`{scales}` has a labeller for most needs: percentages, thousands separators, units, dates.
+
+## Labels
+
+```{r, eval = FALSE}
+labs(title = "Italian speakers merge KIT and FLEECE",
+     subtitle = "Mean formants per speaker, 12 tokens per vowel",
+     x = "F2 (Hz)", y = "F1 (Hz)", colour = NULL,
+     caption = "Simulated data. Ellipses cover 68% of tokens.")
+```
+
+- Axis titles with [units]{.hl}, in words, not variable names
+- `colour = NULL` removes a legend title that only repeats what the keys say
+- A title that states the finding, and a caption that says what the reader sees
+
+## Legend order {.smaller}
+
+```{r, fig.height = 3.1}
+ggplot(vowels, aes(x = duration, colour = fct_reorder(vowel, duration, .desc = TRUE))) +
+  geom_density(linewidth = 1) +
+  facet_wrap(~ l1) +
+  labs(x = "Duration (ms)", y = "Density", colour = NULL) +
+  guides(colour = guide_legend(nrow = 1))
+```
+
+The legend follows the order of the factor levels. Reorder the factor, not the legend.
+
+## Legends: position and keys
+
+```{r, eval = FALSE}
+theme(legend.position = "bottom")
+theme(legend.position = "inside", legend.position.inside = c(0.85, 0.2))
+theme(legend.position = "none")
+guides(colour = guide_legend(nrow = 1, override.aes = list(alpha = 1, size = 4)))
+guides(fill = "none")
+```
+
+- A legend inside an empty corner of the panel saves space
+- Two legends for the same variable merge when they have the same title and labels
+
+## Direct labels {.smaller}
+
+```{r, fig.height = 3.4}
+ggplot(speaker_means, aes(x = F2, y = F1, colour = vowel)) +
+  geom_point(alpha = 0.5) +
+  geom_text(data = vowel_means, aes(label = vowel), fontface = "bold", size = 5) +
+  scale_x_reverse(position = "top") + scale_y_reverse(position = "right") +
+  facet_wrap(~ l1) + theme(legend.position = "none")
+```
+
+Labels next to the data save the reader from looking back and forth between plot and legend.
+
+# Themes
+
+::: {.fact}
+`Did you know:` individual snowshoe hares differ widely in when they moult. That variation is what [natural selection]{.hl} could act on if snow seasons keep getting shorter.
+
+_Source: Zimova, Mills & Nowak (2016), Ecology Letters_
+:::
+
+## What a theme controls {.smaller}
+
+Everything that is not data: fonts, background, grid lines, axis ticks, legend layout, facet strips.
+
+| Element | Changed with | Example |
+|:--|:--|:--|
+| Text | `element_text()` | `axis.title = element_text(size = 12)` |
+| Lines | `element_line()` | `panel.grid.major = element_line(colour = "grey90")` |
+| Boxes | `element_rect()` | `plot.background = element_rect(fill = "white")` |
+| Nothing | `element_blank()` | `panel.grid.minor = element_blank()` |
+
+## A theme of your own {.smaller}
+
+```{r}
+theme_paper <- function(base_size = 11, base_family = "") {
+  theme_minimal(base_size = base_size, base_family = base_family) +
+    theme(plot.background = element_rect(fill = "white", colour = NA),
+          panel.grid.minor = element_blank(),
+          panel.grid.major = element_line(colour = "grey90"),
+          axis.title = element_text(colour = "grey30"),
+          strip.text = element_text(face = "bold", hjust = 0),
+          plot.title = element_text(face = "bold"),
+          plot.title.position = "plot",
+          legend.position = "bottom")
+}
+```
+
+Write it once, keep it in a file, and `source()` it at the top of every script for the same paper. `theme_set(theme_paper())` makes it the default.
+
+## The theme in use {.smaller}
+
+```{r, fig.height = 3.4}
+ggplot(speaker_means, aes(x = F2, y = F1, colour = vowel)) +
+  geom_point(alpha = 0.6) +
+  geom_text(data = vowel_means, aes(label = vowel), fontface = "bold", size = 4.5) +
+  scale_colour_manual(values = okabe[2:7]) +
+  scale_x_reverse(position = "top") + scale_y_reverse(position = "right") +
+  facet_wrap(~ l1) + labs(x = "F2 (Hz)", y = "F1 (Hz)") +
+  theme_paper(base_size = 16) + theme(legend.position = "none")
+```
+
+## Built-in starting points
+
+- `theme_minimal()`, `theme_classic()`, `theme_bw()`, `theme_light()`: pick the closest one and change the rest with `theme()`
+- `base_size` scales all text at once; set it for the size the figure will have on the page (next lecture)
+- In `ggplot2` 4.0 or later, built-in themes also take `ink`, `paper` and `accent` colours, for example `theme_minimal(paper = "white", ink = "grey20")`
+
+## Summary
+
+::: {.takeaway}
+- A plot is [data]{.hl}, [aesthetics]{.hl} and [geometries]{.hl}, plus scales, facets and a theme; each layer can take its own data
+- Map a variable inside `aes()`; set a fixed value outside it
+- Choose a [qualitative]{.hl}, [sequential]{.hl} or [diverging]{.hl} palette from the type of variable, and check it for colour-vision deficiency and greyscale
+- Show important comparisons by position; use colour, shape and size for the rest, and code key groups twice
+- Scales control breaks, labels and legends; direct labels often beat a legend
+- Write a theme function once and use it for every figure in a paper
+:::
+
+## References {.refs}
+
+- Cleveland, W. S., & McGill, R. (1984). Graphical perception: Theory, experimentation, and application to the development of graphical methods. _Journal of the American Statistical Association_, 79(387), 531–554.
+- Okabe, M., & Ito, K. (2008). _Color universal design (CUD): How to make figures and presentations that are friendly to colorblind people_. https://jfly.uni-koeln.de/color/
+- Wells, J. C. (1982). _Accents of English_. Cambridge University Press.
+- [Wickham, H., Navarro, D., & Pedersen, T. L. (n.d.). _ggplot2: Elegant graphics for data analysis_ (3rd ed., online). https://ggplot2-book.org]{.hl}
+- Wilke, C. O. (2019). _Fundamentals of data visualization_. O'Reilly. https://clauswilke.com/dataviz/
+
+## Sources of the animal facts {.refs}
+
+- Mills, L. S., Zimova, M., Oyler, J., Running, S., Abatzoglou, J. T., & Lukacs, P. M. (2013). Camouflage mismatch in seasonal coat color due to decreased snow duration. _Proceedings of the National Academy of Sciences_, 110(18), 7360–7365. https://doi.org/10.1073/pnas.1222724110
+- Zimova, M., Mills, L. S., & Nowak, J. J. (2016). High fitness costs of climate change-induced camouflage mismatch. _Ecology Letters_, 19(3), 299–307. https://doi.org/10.1111/ele.12568
+
+## Slides and code
+
+<div class="qr-block">
+<img src="`r qr_uri`" alt="QR code linking to these slides">
+<div>
+<p>These slides</p>
+<p class="qr-link">mcanzi.github.io/ss27_advanced_statistics/<wbr>`r lecture_file`</p>
+<p>Code and all lectures</p>
+<p class="qr-link">github.com/mcanzi/ss27_advanced_statistics</p>
+</div>
+</div>
