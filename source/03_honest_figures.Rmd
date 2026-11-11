@@ -99,15 +99,11 @@ _Source: Underwood & Reynolds (1980), report for the Office of Naval Research_
 
 ## What a reader needs
 
-To judge a difference between groups, a reader needs three things:
-
-- The [size]{.hl} of the difference
-- The [variability]{.hl} in the data
-- The [sample size]{.hl}
+To judge a difference between groups, a reader needs the [size]{.hl} of the difference, the [variability]{.hl} in the data and the [sample size]{.hl}.
 
 . . .
 
-Many published figures show only the first.
+A bar chart of group means shows only the size of the difference.
 
 ## The dynamite plot {.smaller}
 
@@ -119,7 +115,7 @@ lex |>
   geom_errorbar(aes(ymin = mean - se, ymax = mean + se), width = 0.15, colour = mist)
 ```
 
-Two numbers for 1,200 responses from 30 people. The bars suggest values from zero up to the mean, and the SE treats all 600 responses per group as independent.
+A [dynamite plot]{.hl} shows two numbers for 1,200 responses from 30 people. The bars suggest values from zero up to the mean, and the SE treats all 600 responses per group as independent.
 
 ## What bars hide
 
@@ -158,7 +154,7 @@ p_people <- lex |>
 p_trials + p_people
 ```
 
-Plot the unit your claim is about. A difference between groups of speakers is a claim about participants: show participant means.
+Plot the [unit of analysis]{.hl} your claim is about. A difference between groups of speakers is a claim about participants: show participant means.
 
 ## Show the data {.smaller}
 
@@ -187,7 +183,7 @@ tibble(type = factor(c("± 1 SD", "± 1 SE", "95% CI"), levels = c("± 1 SD", "�
   theme(axis.text.x = element_text(size = 16, colour = mist))
 ```
 
-- SD describes the spread of the data; SE and CI describe the precision of the mean
+- The [SD]{.hl} describes the spread of the data; the [SE]{.hl} and the [CI]{.hl} describe the precision of the mean
 - The same 15 participants give three very different bars: always say in the caption which one you show
 
 ## Distributions: raincloud {.smaller}
@@ -201,13 +197,14 @@ ggplot(lex, aes(x = rt, y = group, fill = group)) +
   theme(legend.position = "none")
 ```
 
-`{ggridges}`: the shape of the distribution above, the observations below, and a line at the median. With many observations per group, this shows far more than a box.
+A [raincloud plot]{.hl} from `{ggridges}` shows the shape of the distribution above, the observations below, and a line at the median.
 
 ## Axes
 
 - A bar shows a value by its [length]{.hl}, so its axis must start at zero
-- Points and lines show values by [position]{.hl}: their axis can zoom in on the range that matters
-- Free scales in facets and log scales are fine if the reader is told: say so in the axis title or caption
+- Points and lines show values by [position]{.hl}, so their axis can zoom in on the range that matters
+
+Free scales in facets and log scales are fine as long as the axis title or caption says so.
 
 ## Say what you did
 
@@ -224,7 +221,7 @@ In the caption or axis titles, tell the reader:
 ::: {.fact}
 `Did you know:` arctic foxes come in two genetically fixed colour phases. The [white]{.hl} phase is white only in winter; the [blue]{.hl} phase is dark all year.
 
-_Sources: Prestrud (1991), Arctic; Underwood & Reynolds (1980)_
+_Sources: Prestrud (1991), Arctic; Norwegian Polar Institute_
 :::
 
 ## Before and after
@@ -253,7 +250,7 @@ p_before + p_after
 - Red and green separated nothing the axis did not already separate, and fail for many readers
 - Axis titles became words with units; `x` needs no title when the labels say it all
 - The grey background, heavy grid and outlines added ink but no information
-- The points stay: they are the data
+- We kept the points, because they show the data
 
 ## Order categories {.smaller}
 
@@ -276,7 +273,7 @@ ggplot(lex, aes(x = log_freq, y = rt, group = participant, colour = group)) +
   labs(x = "log10 frequency", y = "Fitted RT (ms)", colour = NULL)
 ```
 
-Thirty lines on top of each other. Which participant is which?
+In this [spaghetti plot]{.hl}, thirty overlapping lines make it impossible to follow any one participant.
 
 ## Small multiples with context {.smaller}
 
@@ -292,20 +289,20 @@ ggplot(some, aes(x = log_freq, y = rt)) +
   labs(x = "log10 frequency", y = "RT (ms)", colour = NULL)
 ```
 
-The background layer has no `participant` column, so it is drawn in every panel: each participant against all the others.
+In these [small multiples]{.hl}, the background layer has no `participant` column, so it is drawn in every panel: each participant against all the others.
 
 ## Things to avoid
 
-- Pie charts: angles and areas are hard to compare; use bars or points
-- Two different `y` axes on one plot: the scaling decides what looks related
-- 3D effects, shadows and textures
+- Pie charts ask readers to compare angles and areas, which they do badly; bars or points work better
+- With two different `y` axes on one plot, the choice of scaling decides what looks related
+- 3D effects, shadows and textures add ink without information
 - Rainbow palettes for continuous values
 - Bars that do not start at zero, and bars for means without the data
 
 # Models and uncertainty
 
 ::: {.fact}
-`Did you know:` in winter, arctic foxes become less active and lower their [basal metabolic rate]{.hl}, which may help them get through the months when food is scarce.
+`Did you know:` arctic foxes prepare for winter food shortages by storing [fat]{.hl} and caching food during summer and autumn.
 
 _Source: Prestrud (1991), Arctic_
 :::
@@ -325,7 +322,7 @@ ggplot(lex, aes(x = log_freq, y = rt, colour = group, fill = group)) +
   labs(x = "log10 frequency", y = "RT (ms)", colour = NULL, fill = NULL)
 ```
 
-This ribbon comes from a separate `lm()` for each group that treats all 600 responses as independent. With repeated measures it is [too narrow]{.hl}.
+This ribbon comes from a separate `lm()` for each group that treats all 600 responses as independent. It ignores the [repeated measures]{.hl}, so it is too narrow.
 
 ## The model
 
@@ -380,20 +377,22 @@ coef(summary(m4)) |>
   labs(x = "Estimate (ms) with 95% Wald interval", y = NULL)
 ```
 
-One row per fixed effect. Useful when there are many predictors on the same scale.
+A [coefficient plot]{.hl} has one row per fixed effect. It works best when there are many predictors on the same scale.
 
 ## Which plot for a model?
 
-- [Predictions]{.hl}: effects in the units of the outcome; the right choice for interactions and for non-linear effects
-- [Coefficients]{.hl}: compact, but each estimate depends on coding and centering, so readers need the model specification
-- In both cases, say which predictors are held constant, and at which values
+[Predictions]{.hl} show effects in the units of the outcome, which makes them the better choice for interactions and non-linear effects. [Coefficients]{.hl} are compact, but each estimate depends on coding and centering, so readers also need the model specification.
+
+. . .
+
+In both cases, say which predictors are held constant, and at which values.
 
 # Publication-ready
 
 ::: {.fact}
 `Did you know:` among arctic mammals up to the size of an [arctic fox]{.hl}, bigger species have longer winter fur. Larger species, such as wolves and caribou, all have about the same fur length.
 
-_Source: Scholander et al. (1950), Biological Bulletin_
+_Source: Scholander et al. (1950), as summarised by Underwood & Reynolds (1980)_
 :::
 
 ## Titles that say something
@@ -520,7 +519,8 @@ Never paste a screenshot of the RStudio plot pane into a thesis or a paper.
 
 - Prestrud, P. (1991). Adaptations by the arctic fox (_Alopex lagopus_) to the polar winter. _Arctic_, 44(2), 132–138.
 - Scholander, P. F., Walters, V., Hock, R., & Irving, L. (1950). Body insulation of some arctic and tropical mammals and birds. _Biological Bulletin_, 99(2), 225–236.
-- Underwood, L. S., & Reynolds, P. (1980). _Photoperiod and fur lengths in the arctic fox (Alopex lagopus L.)_. Report to the Office of Naval Research, University of Alaska. https://apps.dtic.mil/sti/tr/pdf/ADA085976.pdf
+- Norwegian Polar Institute. Arctic fox (_Vulpes lagopus_). https://npolar.no/?p=5053
+- Underwood, L. S., & Reynolds, P. (1980). _Photoperiod and fur lengths in the arctic fox (Alopex lagopus L.)_. Report to the Office of Naval Research, University of Alaska Anchorage. https://apps.dtic.mil/sti/tr/pdf/ADA085976.pdf
 
 ## Slides and code
 

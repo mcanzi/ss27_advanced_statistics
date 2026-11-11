@@ -48,7 +48,7 @@ options(width = 70, pillar.print_min = 4, pillar.print_max = 4)
 </style>
 
 ::: {.fact}
-`Did you know:` snowshoe hares are brown in summer and white in winter. The timing of the two moults is thought to be set mainly by [day length]{.hl}, not by the snow on the ground.
+`Did you know:` snowshoe hares are brown in summer and white in winter. The timing of the two moults is thought to be set mainly by [day length]{.hl}.
 
 _Source: Mills et al. (2013), PNAS_
 :::
@@ -110,19 +110,18 @@ What we built in: the Italian speakers merge KIT with FLEECE, move TRAP toward D
 # The grammar in five minutes
 
 ::: {.fact}
-`Did you know:` Mills and colleagues followed 148 radio-collared snowshoe hares every week for three years. A hare counted as [mismatched]{.hl} when its coat was at least 60 percentage points whiter or browner than the ground around it.
+`Did you know:` Mills and colleagues followed 148 radio-collared snowshoe hares every week for three years. A hare counted as [mismatched]{.hl} when its coat was at least 60 percentage points whiter than the ground around it.
 
 _Source: Mills et al. (2013), PNAS_
 :::
 
 ## Data, aesthetics, geometry
 
-Every `ggplot2` figure is built from the same parts:
+Every `ggplot2` figure starts from [data]{.hl}, a data frame with one row per observation. The [aesthetics]{.hl}, set inside `aes()`, say which variables go to `x`, `y`, colour or size, and the [geometries]{.hl} say how each row is drawn: as points, lines, bars or boxes.
 
-- [data]{.hl}: a data frame, one row per observation
-- [aesthetics]{.hl}: which variables go to `x`, `y`, colour, size, and so on, inside `aes()`
-- [geometries]{.hl}: how each row is drawn: points, lines, bars, boxes
-- then optional [scales]{.hl}, [facets]{.hl}, [coordinates]{.hl} and a [theme]{.hl}, added with `+`
+. . .
+
+[Scales]{.hl}, [facets]{.hl}, [coordinates]{.hl} and a [theme]{.hl} are optional, and each is added with `+`.
 
 ## A first plot
 
@@ -131,7 +130,7 @@ ggplot(vowels, aes(x = F2, y = F1)) +
   geom_point()
 ```
 
-Correct, but not yet a vowel chart.
+All the data are there, but the axes run the wrong way for a vowel chart.
 
 ## A vowel chart
 
@@ -209,8 +208,8 @@ p_set <- ggplot(vowel_means, aes(F2, F1)) + geom_point(colour = "blue", size = 3
 p_map + p_set
 ```
 
-- Inside `aes()`, `"blue"` is treated as data: a variable with one value, which gets the first colour of the scale and a legend
-- Outside `aes()`, it is a fixed colour for the layer
+- Inside `aes()`, `"blue"` is [mapped]{.hl}: it is treated as a variable with one value, which gets the first colour of the scale and a legend
+- Outside `aes()`, the colour is [set]{.hl}: every point in the layer is blue
 
 ## `colour` or `fill`?
 
@@ -236,7 +235,7 @@ ggplot(pals, aes(i, 0, fill = col)) +
   theme(strip.text = element_text(colour = mist, hjust = 0, size = 15, margin = margin(t = 6, b = 4)))
 ```
 
-The type of variable decides the type of palette.
+Choose the palette from the type of variable you are showing.
 
 ## Your own colours {.smaller}
 
@@ -248,7 +247,7 @@ ggplot(vowels, aes(x = vowel, y = duration, fill = l1)) +
   labs(x = NULL, y = "Duration (ms)", fill = NULL)
 ```
 
-Name the values. The colours then stay with their categories when a group is dropped or the order changes, and you can reuse `l1_colours` in every figure of a paper.
+With a [named vector]{.hl}, colours stay with their categories when a group is dropped or the order changes, and `l1_colours` can be reused in every figure of a paper.
 
 ## Palettes for every reader
 
@@ -284,7 +283,7 @@ ggplot(vowels, aes(x = F2, y = F1, colour = duration)) +
   labs(colour = "Duration (ms)")
 ```
 
-Viridis palettes rise evenly in lightness, so they also work in greyscale. `begin` drops the darkest end, which would vanish on this background.
+[Viridis]{.hl} palettes rise evenly in lightness, so they also work in greyscale. `begin` drops the darkest end, which would vanish on this background.
 
 ## Diverging {.smaller}
 
@@ -300,7 +299,7 @@ vowels |>
   labs(x = NULL, y = NULL, fill = "ms from the\nspeaker's mean")
 ```
 
-Diverging palettes suit a meaningful midpoint. Symmetric limits make equal distances from zero equally dark.
+Diverging palettes suit a meaningful midpoint. [Symmetric limits]{.hl} make equal distances from zero equally dark.
 
 ## Highlight instead {.smaller}
 
@@ -313,12 +312,12 @@ ggplot(vowels, aes(x = F2, y = F1)) +
   facet_wrap(~ l1)
 ```
 
-With more than six to eight categories, colour stops working. Colour what the text is about and leave the rest grey.
+With more than six to eight categories, readers can no longer match colours to labels. [Highlighting]{.hl} colours what the text is about and leaves the rest grey.
 
 # Shape, size and transparency
 
 ::: {.fact}
-`Did you know:` mismatched snowshoe hares, white on brown ground or brown on snow, had up to [7% lower]{.hl} weekly survival than hares whose coat matched the ground.
+`Did you know:` in a later study of 186 radio-collared hares, those whose coat did not match the ground had up to 7% lower [weekly survival]{.hl}.
 
 _Source: Zimova, Mills & Nowak (2016), Ecology Letters_
 :::
@@ -350,7 +349,7 @@ ggplot(speaker_means, aes(x = F2, y = F1, fill = l1, shape = l1)) +
   scale_x_reverse(position = "top") + scale_y_reverse(position = "right")
 ```
 
-Colour and shape show the same variable, so the groups survive greyscale printing. Shapes 21–25 take a `fill` and an outline `colour`.
+Colour and shape show the same variable ([redundant coding]{.hl}), so the groups survive greyscale printing. Shapes 21–25 take a `fill` and an outline `colour`.
 
 ## Transparency and overplotting
 
@@ -360,7 +359,7 @@ p_alpha <- ggplot(vowels, aes(F2, F1)) + geom_point(colour = kingfisher, alpha =
 p_solid + p_alpha
 ```
 
-With 1,440 points, solid points hide where the data are dense. Transparent points show it.
+With 1,440 solid points, [overplotting]{.hl} hides where the data are dense. With `alpha = 0.1`, the dense regions become darker.
 
 ## Size
 
@@ -379,7 +378,7 @@ _Source: Mills et al. (2013), PNAS_
 
 ## What a scale does
 
-Every aesthetic has a scale: it turns data values into positions, colours or sizes, and draws the axis or legend that reads them back.
+Every aesthetic has a [scale]{.hl}: it turns data values into positions, colours or sizes, and draws the axis or legend that reads them back.
 
 - `scale_<aesthetic>_<type>()`: `scale_x_continuous()`, `scale_colour_manual()`, `scale_fill_viridis_c()`
 - `name`, `breaks`, `labels` and `limits` work the same way in all of them
@@ -408,7 +407,7 @@ labs(title = "Italian speakers merge KIT and FLEECE",
      caption = "Simulated data. Ellipses cover 68% of tokens.")
 ```
 
-- Axis titles with [units]{.hl}, in words, not variable names
+- Axis titles written as words with [units]{.hl}, such as "F1 (Hz)" for the variable `F1`
 - `colour = NULL` removes a legend title that only repeats what the keys say
 - A title that states the finding, and a caption that says what the reader sees
 
@@ -422,7 +421,7 @@ ggplot(vowels, aes(x = duration, colour = fct_reorder(vowel, duration, .desc = T
   guides(colour = guide_legend(nrow = 1))
 ```
 
-The legend follows the order of the factor levels. Reorder the factor, not the legend.
+The legend follows the order of the [factor levels]{.hl}, so to change the legend, reorder the factor.
 
 ## Legends: position and keys
 
@@ -447,7 +446,7 @@ ggplot(speaker_means, aes(x = F2, y = F1, colour = vowel)) +
   facet_wrap(~ l1) + theme(legend.position = "none")
 ```
 
-Labels next to the data save the reader from looking back and forth between plot and legend.
+[Direct labels]{.hl} next to the data save the reader from looking back and forth between plot and legend.
 
 # Themes
 
@@ -484,7 +483,7 @@ theme_paper <- function(base_size = 11, base_family = "") {
 }
 ```
 
-Write it once, keep it in a file, and `source()` it at the top of every script for the same paper. `theme_set(theme_paper())` makes it the default.
+Write the [theme function]{.hl} once, keep it in a file, and `source()` it at the top of every script for the same paper. `theme_set(theme_paper())` makes it the default.
 
 ## The theme in use {.smaller}
 
@@ -500,9 +499,11 @@ ggplot(speaker_means, aes(x = F2, y = F1, colour = vowel)) +
 
 ## Built-in starting points
 
-- `theme_minimal()`, `theme_classic()`, `theme_bw()`, `theme_light()`: pick the closest one and change the rest with `theme()`
-- `base_size` scales all text at once; set it for the size the figure will have on the page (next lecture)
-- In `ggplot2` 4.0 or later, built-in themes also take `ink`, `paper` and `accent` colours, for example `theme_minimal(paper = "white", ink = "grey20")`
+Start from the built-in theme closest to what you want, such as `theme_minimal()`, `theme_classic()` or `theme_bw()`, and change the rest with `theme()`. `base_size` scales all text at once, so set it for the size the figure will have on the page (next lecture).
+
+. . .
+
+In `ggplot2` 4.0 or later, built-in themes also take `ink`, `paper` and `accent` colours, for example `theme_minimal(paper = "white", ink = "grey20")`.
 
 ## Summary
 

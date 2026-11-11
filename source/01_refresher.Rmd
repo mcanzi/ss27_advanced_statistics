@@ -51,7 +51,7 @@ options(width = 70, pillar.print_min = 4, pillar.print_max = 4)
 ::: {.fact}
 `Did you know:` king penguins breed in colonies of up to 300,000 birds and build no nests. When a parent comes back from the sea, it and its chick find each other by [call]{.hl} alone.
 
-_Source: Aubin & Jouventin (1998), Proceedings of the Royal Society B_
+_Sources: Aubin & Jouventin (1998), Proceedings of the Royal Society B; Howlett (1998), Nature_
 :::
 
 ## Why a refresher
@@ -98,7 +98,7 @@ lex
 
 . . .
 
-`r nrow(lex)` rows: one per participant and word. We know the truth, because we wrote it: frequent words are faster, long words are slower, L2 speakers are slower overall, and frequency matters more for them.
+`r nrow(lex)` rows: one per participant and word. Because we simulated the data, we know the true effects: frequent words are faster, long words are slower, L2 speakers are slower overall, and frequency matters more for them.
 
 ## A first look
 
@@ -189,7 +189,7 @@ ggplot(wm2, aes(x = x, y = rt)) +
   labs(x = NULL, y = "Mean RT per word (ms)")
 ```
 
-Same line, same slope; only the position of 0, and with it the intercept (gold), changes.
+The line and its slope stay where they were. Centering moves 0, and with it the intercept (gold).
 
 ## `tidy()` and `glance()`
 
@@ -200,7 +200,7 @@ glance(lm(rt ~ freq_c, data = lex))[, c("r.squared", "sigma", "nobs")]
 
 . . .
 
-[R²]{.hl} is the share of the variance in RT that the model accounts for. `sigma` is the residual standard deviation, in ms.
+[R²]{.hl} is the share of the variance in RT that the model accounts for. `sigma` is the [residual standard deviation]{.hl}, in ms.
 
 ## Checking the residuals
 
@@ -212,12 +212,12 @@ augment(lm(rt ~ freq_c, data = lex)) |>
   labs(x = "Fitted RT (ms)", y = "Residual (ms)")
 ```
 
-Linear models assume residuals that are roughly normal and equally spread along the fitted values. Here they are.
+Linear models assume residuals that are roughly [normal]{.hl} and [equally spread]{.hl} along the fitted values. These residuals look fine on both counts.
 
 # More predictors
 
 ::: {.fact}
-`Did you know:` each syllable of a king penguin's call carries its identity. Chicks recognised a parent from [a single syllable]{.hl} played back on its own.
+`Did you know:` king penguin chicks need very little of a call to recognise a parent. The first half of [one syllable]{.hl} (0.23 s), with only its three lowest harmonics, was enough.
 
 _Source: Jouventin, Aubin & Lengagne (1999), Animal Behaviour_
 :::
@@ -232,7 +232,7 @@ coef(lm(rt ~ group, data = lex))
 
 With [treatment coding]{.hl}, R's default, `group` becomes a 0/1 dummy. The intercept is the mean of the reference level (L1, first in the alphabet), and `groupL2` is the difference between L2 and L1.
 
-## Two codings, one picture
+## Treatment and sum coding, visually
 
 ```{r, echo = FALSE, fig.height = 4.2}
 pm <- summarise(lex, rt = mean(rt), .by = c(participant, group))
@@ -343,10 +343,10 @@ coef(m3)
 
 With sum-coded `group` and centred `freq_c`:
 
-- `(Intercept)`: the predicted RT for an average-frequency word, averaged over the two groups
-- `freq_c`: the frequency slope averaged over the groups
-- `group1`: half the L1–L2 difference at average frequency
-- `freq_c:group1`: half the difference between the two slopes
+- `(Intercept)` is the predicted RT for an average-frequency word, averaged over the two groups
+- `freq_c` is the frequency slope, averaged over the groups
+- `group1` is half the L1–L2 difference at average frequency
+- `freq_c:group1` is half the difference between the two slopes
 
 . . .
 
@@ -362,7 +362,7 @@ With treatment coding and uncentred predictors, the same model is correct but `g
 # Mixed models
 
 ::: {.fact}
-`Did you know:` king and emperor penguins call with [two voices]{.hl} at once, one from each side of the syrinx. The beat between them identifies each bird: when one voice was removed from a playback, neither mates nor chicks replied.
+`Did you know:` king and emperor penguins call with [two voices]{.hl} at once, one from each side of the syrinx. When one voice was removed from an emperor penguin's call in playbacks, neither its mate nor its chick replied.
 
 _Source: Aubin, Jouventin & Hildebrand (2000), Proceedings of the Royal Society B_
 :::
@@ -392,7 +392,8 @@ One line per participant: they differ in overall speed (intercepts) and in how m
 
 - [Fixed effects]{.hl} are the predictors we want to estimate: frequency, length, group, their interaction
 - [Random effects]{.hl} model how grouping units vary around them: participants and words
-- A [random intercept]{.hl} lets each participant or word have its own baseline. A [random slope]{.hl} lets the effect of a predictor vary by participant (or word)
+- A [random intercept]{.hl} lets each participant or word have its own baseline
+- A [random slope]{.hl} lets the effect of a predictor vary by participant (or word)
 
 . . .
 
@@ -467,7 +468,7 @@ left_join(nopool, pooled, by = "participant") |>
   theme(axis.text.y = element_blank(), panel.grid.major.y = element_blank())
 ```
 
-Each participant's slope moves toward the overall slope (dashed). This is [shrinkage]{.hl}: extreme estimates borrow strength from the rest of the sample.
+Each participant's slope moves toward the overall slope (dashed). This [shrinkage]{.hl}, also called [partial pooling]{.hl}, lets extreme estimates borrow strength from the rest of the sample.
 
 ## Testing an effect
 
@@ -490,13 +491,14 @@ round(coef(summary(m4)), 3)
 
 . . .
 
-`{lmerTest}` adds degrees of freedom (Satterthwaite's approximation) and p-values to the fixed effects.
+`{lmerTest}` adds degrees of freedom ([Satterthwaite's approximation]{.hl}) and p-values to the fixed effects.
 
 ## When things go wrong {.smaller}
 
 - A [convergence warning]{.hl} means the optimiser may not have found the best estimates. Check the data and scaling, try another optimiser (`lmerControl(optimizer = "bobyqa")`), and simplify only if needed
 - A [singular fit]{.hl} means some variance or correlation is estimated at its boundary, often a random-effect correlation of ±1 or a standard deviation of 0. The data cannot support that part of the structure
-- Simplify step by step and report what you removed: first correlations, then the random slopes that explain least
+
+In both cases, simplify step by step and report what you removed: first correlations, then the random slopes that explain least.
 
 ## Reporting {.smaller}
 
@@ -529,9 +531,10 @@ Report the full model structure, the coding of each predictor, and how the model
 
 ## Sources of the animal facts {.refs}
 
-- Aubin, T., & Jouventin, P. (1998). Cocktail-party effect in king penguin colonies. _Proceedings of the Royal Society B_, 265, 1665–1673.
+- Aubin, T., & Jouventin, P. (1998). Cocktail-party effect in king penguin colonies. _Proceedings of the Royal Society B_, 265(1406), 1665–1673. https://doi.org/10.1098/rspb.1998.0486
 - Aubin, T., Jouventin, P., & Hildebrand, C. (2000). Penguins use the two-voice system to recognize each other. _Proceedings of the Royal Society B_, 267(1448), 1081–1087. https://doi.org/10.1098/rspb.2000.1112
-- Jouventin, P., Aubin, T., & Lengagne, T. (1999). Finding a parent in a king penguin colony: The acoustic system of individual recognition. _Animal Behaviour_.
+- Howlett, R. (1998). Pick out a penguin. _Nature_, 395, 637. https://doi.org/10.1038/27075
+- Jouventin, P., Aubin, T., & Lengagne, T. (1999). Finding a parent in a king penguin colony: The acoustic system of individual recognition. _Animal Behaviour_, 57(6), 1175–1183. https://doi.org/10.1006/anbe.1999.1086
 
 ## Slides and code
 
