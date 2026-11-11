@@ -1,0 +1,458 @@
+---
+title: "Statistics refresher"
+subtitle: "Linear models, interactions and mixed models"
+author: "Dr Massimiliano Canzi"
+knit: (function(input, ...) rmarkdown::render(input, output_dir = file.path(dirname(input), "..", "docs")))
+output:
+  revealjs::revealjs_presentation:
+    theme: black
+    css: theme-buttercup.css
+    highlight: zenburn
+    mathjax: null
+    incremental: true
+    transition: fade
+    background_transition: fade
+    self_contained: true
+    reveal_options:
+      width: 1050
+      height: 700
+      slideNumber: "c/t"
+      showSlideNumber: all
+      controls: true
+      touch: true
+      transitionSpeed: fast
+      navigationMode: linear
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                      comment = "",
+                      fig.width = 10, fig.height = 4.4, out.width = "100%")
+
+library(tidyverse)
+library(broom)
+library(lme4)
+
+source("slides_setup.R", local = knitr::knit_global())
+
+options(width = 70, pillar.print_min = 4, pillar.print_max = 4)
+```
+
+# From lm() to lmer()
+
+<style>
+  :root {
+    --footer-text:  "Statistics refresher";
+    --qr:           `r qr_css`;
+    --lecture:      `r lecture_label`;
+  }
+</style>
+
+::: {.fact}
+`Did you know:` king penguins breed in colonies of up to 300,000 birds and build no nests. When a parent comes back from the sea, it and its chick find each other by [call]{.hl} alone.
+
+_Source: Aubin & Jouventin (1998), Proceedings of the Royal Society B_
+:::
+
+## Why a refresher
+
+This course builds on Statistics (for Linguists). Before we add anything new, we go once through the models from that course, in the order we met them: one predictor, several predictors, interactions, and mixed models.
+
+. . .
+
+Nothing here is new. If a slide feels unfamiliar, the matching lecture of the first course has the details, and so does Winter (2019).
+
+## Today
+
+1. The linear model
+2. Categorical predictors and several predictors
+3. Interactions
+4. Mixed models
+
+## The data {.smaller}
+
+A simulated lexical decision task: 30 participants (15 L1 and 15 L2 speakers of English) each respond to the same 40 words.
+
+```{r}
+set.seed(2027)
+participants <- tibble(participant = sprintf("P%02d", 1:30),
+                       group = rep(c("L1", "L2"), each = 15),
+                       p0 = rnorm(30, 0, 60),
+                       p1 = rnorm(30, 0, 12))
+words <- tibble(word = sprintf("w%02d", 1:40),
+                log_freq = runif(40, 1, 6),
+                length = pmin(pmax(round(11 - 1.1 * log_freq + rnorm(40, 0, 1.6)), 3), 13),
+                w0 = rnorm(40, 0, 30))
+lex <- crossing(participants, words) |>
+  mutate(slope = -25 + p1 + if_else(group == "L2", -25, 0),
+         rt = round(700 + p0 + w0 + if_else(group == "L2", 120, 0) +
+                    slope * (log_freq - 3.5) + 12 * (length - 7) + rnorm(n(), 0, 70))) |>
+  select(participant, group, word, log_freq, length, rt)
+```
+
+## The data
+
+```{r}
+lex
+```
+
+. . .
+
+`r nrow(lex)` rows: one per participant and word. We know the truth, because we wrote it: frequent words are faster, long words are slower, L2 speakers are slower overall, and frequency matters more for them.
+
+# The linear model
+
+::: {.fact}
+`Did you know:` in playback experiments, king penguin chicks picked out their parent's call even when it was [6 dB quieter]{.hl} than the calls of other adults played at the same time.
+
+_Source: Aubin & Jouventin (1998), Proceedings of the Royal Society B_
+:::
+
+## The equation
+
+<div class="formula">y = b₀ + b₁ · x + e</div>
+
+- The [intercept]{.hl} `b₀` is the predicted `y` when `x = 0`
+- The [slope]{.hl} `b₁` is how much `y` changes when `x` increases by one unit
+- The [residual]{.hl} `e` is the distance between each observation and the line
+
+. . .
+
+`lm()` finds the intercept and slope that minimise the sum of squared residuals: [least squares]{.hl}.
+
+## One predictor
+
+```{r}
+m1 <- lm(rt ~ log_freq, data = lex)
+coef(m1)
+```
+
+. . .
+
+Each extra log unit of frequency goes with `r round(abs(coef(m1)["log_freq"]))` ms faster responses. The intercept is the predicted RT for a word with log frequency 0, which none of our words has.
+
+## Centering
+
+```{r}
+lex <- lex |>
+  mutate(freq_c = log_freq - mean(log_freq),
+         length_c = length - mean(length))
+coef(lm(rt ~ freq_c, data = lex))
+```
+
+. . .
+
+[Centering]{.hl} moves 0 to the mean. The slope stays the same; the intercept becomes the predicted RT for a word of average frequency.
+
+## `tidy()` and `glance()`
+
+```{r}
+tidy(lm(rt ~ freq_c, data = lex))
+glance(lm(rt ~ freq_c, data = lex))[, c("r.squared", "sigma", "nobs")]
+```
+
+. . .
+
+[R²]{.hl} is the share of the variance in RT that the model accounts for. `sigma` is the residual standard deviation, in ms.
+
+## Checking the residuals
+
+```{r, echo = FALSE, fig.height = 3.8}
+augment(lm(rt ~ freq_c, data = lex)) |>
+  ggplot(aes(x = .fitted, y = .resid)) +
+  geom_hline(yintercept = 0, colour = muted, linetype = "dashed") +
+  geom_point(colour = kingfisher, alpha = 0.3, size = 1.5) +
+  labs(x = "Fitted RT (ms)", y = "Residual (ms)")
+```
+
+Linear models assume residuals that are roughly normal and equally spread along the fitted values. Here they are.
+
+# More predictors
+
+::: {.fact}
+`Did you know:` each syllable of a king penguin's call carries its identity. Chicks recognised a parent from [a single syllable]{.hl} played back on its own.
+
+_Source: Jouventin, Aubin & Lengagne (1999), Animal Behaviour_
+:::
+
+## A categorical predictor
+
+```{r}
+coef(lm(rt ~ group, data = lex))
+```
+
+. . .
+
+With [treatment coding]{.hl}, R's default, `group` becomes a 0/1 dummy. The intercept is the mean of the reference level (L1, first in the alphabet), and `groupL2` is the difference between L2 and L1.
+
+## Sum coding
+
+```{r}
+lex <- lex |> mutate(group = factor(group))
+contrasts(lex$group) <- contr.sum(2)
+coef(lm(rt ~ group, data = lex))
+```
+
+. . .
+
+With [sum coding]{.hl} (−1 and 1 here, R's `contr.sum()` gives L1 = 1), the intercept is the mean of the two group means, and `group1` is half the difference between them. This matters once we add interactions.
+
+## Two continuous predictors
+
+```{r}
+m2 <- lm(rt ~ freq_c + length_c, data = lex)
+coef(m2)
+```
+
+. . .
+
+Each slope is now the effect of one predictor [holding the other constant]{.hl}. The frequency slope shrinks from `r round(coef(lm(rt ~ freq_c, data = lex))["freq_c"])` to `r round(coef(m2)["freq_c"])` ms: in the simple model, frequency also stood in for length, because frequent words are shorter.
+
+## Correlated predictors
+
+```{r}
+cor(words$log_freq, words$length)
+```
+
+. . .
+
+- When predictors overlap, each coefficient rests on the part of the predictor the others do not share, so standard errors grow. This is [collinearity]{.hl}
+- Check it with a correlation matrix or variance inflation factors (`car::vif()`), and think about which predictors the design really needs
+
+# Interactions
+
+::: {.fact}
+`Did you know:` king penguin chicks still recognised their parent's call when its frequency was shifted [100 Hz down or 75 Hz up]{.hl}. Their recognition does not depend on exact pitch.
+
+_Source: Jouventin, Aubin & Lengagne (1999), Animal Behaviour_
+:::
+
+## Two groups, two slopes
+
+```{r, echo = FALSE, fig.height = 4.2}
+lex |>
+  summarise(rt = mean(rt), .by = c(group, word, log_freq)) |>
+  ggplot(aes(x = log_freq, y = rt, colour = group)) +
+  geom_point(alpha = 0.6, size = 2.2) +
+  geom_smooth(method = "lm", se = FALSE, linewidth = 1.4) +
+  labs(x = "log10 frequency", y = "Mean RT per word (ms)", colour = NULL)
+```
+
+Frequency matters more for L2 speakers: the lines are not parallel.
+
+## An interaction in R
+
+```{r}
+m3 <- lm(rt ~ freq_c * group, data = lex)
+coef(m3)
+```
+
+. . .
+
+`freq_c * group` is short for `freq_c + group + freq_c:group`. The [interaction]{.hl} term `freq_c:group1` says how much the frequency slope changes between the groups.
+
+## Reading the coefficients
+
+With sum-coded `group` and centred `freq_c`:
+
+- `(Intercept)`: the predicted RT for an average-frequency word, averaged over the two groups
+- `freq_c`: the frequency slope averaged over the groups
+- `group1`: half the L1–L2 difference at average frequency
+- `freq_c:group1`: half the difference between the two slopes
+
+. . .
+
+With treatment coding and uncentred predictors, the same model is correct but `group` would be the L1–L2 difference at log frequency 0. Each lower-order term in an interaction model is a [simple effect]{.hl}: the effect when the other predictor is 0.
+
+## Reading interactions
+
+- Plot the data and the fitted lines first
+- Check how each predictor is coded and where its 0 is
+- Read the interaction as a difference in slopes, or a difference in differences
+- For three-way interactions, plot again before reading any number
+
+# Mixed models
+
+::: {.fact}
+`Did you know:` king and emperor penguins call with [two voices]{.hl} at once, one from each side of the syrinx. The beat between them identifies each bird: when one voice was removed from a playback, neither mates nor chicks replied.
+
+_Source: Aubin, Jouventin & Hildebrand (2000), Proceedings of the Royal Society B_
+:::
+
+## Not independent
+
+So far, `lm()` treated our `r nrow(lex)` rows as `r nrow(lex)` independent observations. They are not:
+
+- each participant gave `r n_distinct(lex$word)` responses, and some participants are faster than others
+- each word was seen by `r n_distinct(lex$participant)` participants, and some words are easier than others
+
+. . .
+
+Ignoring this makes standard errors too small, so effects look more certain than they are.
+
+## Participants differ
+
+```{r, echo = FALSE, fig.height = 4.2}
+ggplot(lex, aes(x = log_freq, y = rt, group = participant, colour = group)) +
+  geom_smooth(method = "lm", se = FALSE, linewidth = 0.7, alpha = 0.7) +
+  labs(x = "log10 frequency", y = "Fitted RT (ms)", colour = NULL)
+```
+
+One line per participant: they differ in overall speed (intercepts) and in how much frequency helps them (slopes).
+
+## Fixed and random effects
+
+- [Fixed effects]{.hl} are the predictors we want to estimate: frequency, length, group, their interaction
+- [Random effects]{.hl} model how grouping units vary around them: participants and words
+- A [random intercept]{.hl} lets each participant or word have its own baseline. A [random slope]{.hl} lets the effect of a predictor vary by participant (or word)
+
+. . .
+
+A random slope needs a predictor that varies within the grouping unit. Frequency and length vary within participants; group varies within words, because every word is seen by both groups.
+
+## `lmer()` syntax {.smaller}
+
+| Formula term | Meaning |
+|---|---|
+| `(1 | participant)` | random intercepts by participant |
+| `(1 + freq_c | participant)` | random intercepts and frequency slopes, with their correlation |
+| `(1 + freq_c || participant)` | the same, without the correlation |
+| `(1 | word)` | random intercepts by word |
+
+. . .
+
+We fit `rt ~ freq_c * group + length_c + (1 + freq_c | participant) + (1 | word)`. The [maximal]{.hl} structure for this design would also include by-participant slopes for length and by-word slopes for group (Barr et al., 2013); we leave them out here to keep the example small.
+
+## Fitting the model
+
+```{r}
+m4 <- lmer(rt ~ freq_c * group + length_c + (1 + freq_c | participant) + (1 | word),
+           data = lex)
+round(fixef(m4), 1)
+```
+
+. . .
+
+The fixed effects tell the same story as before: frequency speeds up responses, length slows them down, L2 speakers are slower, and the frequency slope differs between groups.
+
+## Random effects
+
+```{r}
+VarCorr(m4)
+```
+
+. . .
+
+- Participants' baselines vary with a standard deviation of about `r round(attr(VarCorr(m4)$participant, "stddev")[1])` ms, words' baselines with about `r round(attr(VarCorr(m4)$word, "stddev")[1])` ms
+- Participants' frequency slopes vary around the fixed slope with a standard deviation of about `r round(attr(VarCorr(m4)$participant, "stddev")[2])` ms
+- `Residual` is the variation left over within participants and words
+
+## Standard errors
+
+```{r}
+rbind(lm = coef(summary(lm(rt ~ freq_c * group + length_c, data = lex)))["freq_c", 1:2],
+      lmer = coef(summary(m4))["freq_c", 1:2])
+```
+
+. . .
+
+The estimate barely changes, but its standard error grows once the model knows that responses from the same participant and word belong together.
+
+## Partial pooling
+
+```{r, echo = FALSE, fig.height = 3.9}
+m_s <- lmer(rt ~ freq_c + (1 + freq_c | participant), data = lex)
+nopool <- lex |>
+  nest_by(participant) |>
+  reframe(slope = coef(lm(rt ~ freq_c, data = data))["freq_c"])
+pooled <- tibble(participant = rownames(coef(m_s)$participant),
+                 partial = coef(m_s)$participant$freq_c)
+left_join(nopool, pooled, by = "participant") |>
+  mutate(participant = fct_reorder(participant, slope)) |>
+  ggplot(aes(y = participant)) +
+  geom_vline(xintercept = fixef(m_s)["freq_c"], colour = muted, linetype = "dashed") +
+  geom_segment(aes(x = slope, xend = partial, yend = participant), colour = vine, linewidth = 0.9) +
+  geom_point(aes(x = slope, colour = "Separate lm() per participant"), size = 2.4) +
+  geom_point(aes(x = partial, colour = "Mixed model"), size = 2.4) +
+  scale_colour_manual(values = c(`Separate lm() per participant` = pandan, `Mixed model` = kingfisher)) +
+  labs(x = "Frequency slope (ms per log unit)", y = NULL, colour = NULL) +
+  theme(axis.text.y = element_blank(), panel.grid.major.y = element_blank())
+```
+
+Each participant's slope moves toward the overall slope (dashed). This is [shrinkage]{.hl}: extreme estimates borrow strength from the rest of the sample.
+
+## Testing an effect
+
+A [likelihood ratio test]{.hl} compares two nested models fitted with maximum likelihood:
+
+```{r}
+m4_ml <- update(m4, REML = FALSE)
+m4_noint <- update(m4_ml, . ~ . - freq_c:group)
+anova(m4_noint, m4_ml)
+```
+
+## p-values with `{lmerTest}`
+
+```{r}
+library(lmerTest)
+m4 <- lmer(rt ~ freq_c * group + length_c + (1 + freq_c | participant) + (1 | word),
+           data = lex)
+round(coef(summary(m4)), 3)
+```
+
+. . .
+
+`{lmerTest}` adds degrees of freedom (Satterthwaite's approximation) and p-values to the fixed effects.
+
+## When things go wrong
+
+- A [convergence warning]{.hl} means the optimiser may not have found the best estimates. Check the data and scaling, try another optimiser (`control = lmerControl(optimizer = "bobyqa")`), and simplify only if needed
+- A [singular fit]{.hl} means some variance or correlation is estimated at its boundary, often a random-effect correlation of ±1 or a standard deviation of 0. The data cannot support that part of the structure
+- Simplify step by step and report what you removed: first correlations, then the random slopes that explain least
+
+## Reporting
+
+A sentence for our model:
+
+. . .
+
+> We fitted a linear mixed model to RTs with centred log frequency, sum-coded group, their interaction and centred length as fixed effects, by-participant random intercepts and frequency slopes, and by-word random intercepts (`lme4`; Bates et al., 2015). The frequency effect was stronger for L2 than for L1 speakers (interaction, with L1 coded 1 and L2 −1: b = `r round(fixef(m4)["freq_c:group1"], 1)` ms, SE = `r round(coef(summary(m4))["freq_c:group1", "Std. Error"], 1)`, p `r { p <- coef(summary(m4))["freq_c:group1", "Pr(>|t|)"]; if (p < 0.001) "< .001" else paste("=", sub("^0", "", sprintf("%.3f", p))) }`).
+
+. . .
+
+Report the full model structure, the coding of each predictor, and how the model was simplified, if it was.
+
+## Summary
+
+::: {.takeaway}
+- A linear model estimates an [intercept]{.hl} and [slopes]{.hl}; centering makes the intercept meaningful
+- Treatment and sum coding answer different questions about categorical predictors
+- With several predictors, each slope holds the others constant; collinearity makes slopes uncertain
+- In an [interaction]{.hl} model, each lower-order term is a simple effect, so coding and centering decide what it means
+- [Mixed models]{.hl} add random intercepts and slopes for participants and items, which gives honest standard errors and shrinks individual estimates toward the group
+:::
+
+## References {.refs}
+
+- Barr, D. J., Levy, R., Scheepers, C., & Tily, H. J. (2013). Random effects structure for confirmatory hypothesis testing: Keep it maximal. _Journal of Memory and Language_, 68(3), 255–278.
+- Bates, D., Mächler, M., Bolker, B., & Walker, S. (2015). Fitting linear mixed-effects models using lme4. _Journal of Statistical Software_, 67(1), 1–48.
+- Kuznetsova, A., Brockhoff, P. B., & Christensen, R. H. B. (2017). lmerTest package: Tests in linear mixed effects models. _Journal of Statistical Software_, 82(13), 1–26.
+- [Winter, B. (2019). _Statistics for Linguists: An Introduction Using R_. Routledge. Chapters 4–8, 14 and 15.]{.hl}
+
+## Sources of the animal facts {.refs}
+
+- Aubin, T., & Jouventin, P. (1998). Cocktail-party effect in king penguin colonies. _Proceedings of the Royal Society B_, 265, 1665–1673.
+- Aubin, T., Jouventin, P., & Hildebrand, C. (2000). Penguins use the two-voice system to recognize each other. _Proceedings of the Royal Society B_, 267(1448), 1081–1087. https://doi.org/10.1098/rspb.2000.1112
+- Jouventin, P., Aubin, T., & Lengagne, T. (1999). Finding a parent in a king penguin colony: The acoustic system of individual recognition. _Animal Behaviour_.
+
+## Slides and code
+
+<div class="qr-block">
+<img src="`r qr_uri`" alt="QR code linking to these slides">
+<div>
+<p>These slides</p>
+<p class="qr-link">mcanzi.github.io/ss27_advanced_statistics/<wbr>`r lecture_file`</p>
+<p>Code and all lectures</p>
+<p class="qr-link">github.com/mcanzi/ss27_advanced_statistics</p>
+</div>
+</div>

@@ -53,7 +53,7 @@ options(
 )
 
 lecture_file <- sub("(\\.knit)?\\.(Rmd|md)$", ".html", knitr::current_input())
-lecture_count <- 1
+lecture_count <- length(list.files(pattern = "^[0-9]{2}_.*\\.Rmd$"))
 lecture_label <- sprintf('"lecture %s / %s"', substr(lecture_file, 1, 2), lecture_count)
 slides_url <- paste0("https://mcanzi.github.io/ss27_advanced_statistics/", lecture_file)
 
