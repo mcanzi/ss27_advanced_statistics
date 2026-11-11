@@ -117,7 +117,7 @@ ggplot(price, aes(x = time, y = f2, group = traj)) +
   labs(x = "Time (% of vowel duration)", y = "F2 (Hz)")
 ```
 
-Each line is one token. The question: do the two groups produce different F2 trajectories?
+Each line is one token. The research question is whether the two groups produce different F2 trajectories.
 
 # Curves
 
@@ -150,7 +150,7 @@ The line misses the shape, and the residuals follow a pattern: neighbouring resi
 
 ## Polynomials
 
-```{r polynomials, echo = FALSE, fig.height = 3.3}
+```{r polynomials, echo = FALSE, fig.height = 3.0}
 map(c(2, 3, 9), \(d) {
   ggplot(mean_traj, aes(time, f2)) +
     geom_smooth(method = "lm", formula = y ~ poly(x, d), se = FALSE, colour = pandan,
@@ -161,9 +161,10 @@ map(c(2, 3, 9), \(d) {
   wrap_plots(nrow = 1)
 ```
 
-- A quadratic or cubic term underfits: it cannot follow the flat start and the late rise
-- A high-degree polynomial overfits: it bends to follow the noise
-- Nothing in the data tells us which degree to choose
+- A quadratic or cubic term [underfits]{.hl}: it cannot follow the flat start and the late rise
+- A high-degree polynomial [overfits]{.hl}: it bends to follow the noise
+
+Nothing in the data says which degree to choose.
 
 # Smooth terms
 
@@ -179,9 +180,7 @@ A generalised additive model can contain [smooth terms]{.hl} next to the usual p
 
 <div class="formula">y = α + β₁ · x₁ + f(x₂) + e</div>
 
-- `f(x₂)` is a smooth function of `x₂` whose shape is estimated from the data
-- Like a polynomial, it is a sum of simpler functions, the [basis functions]{.hl}
-- Unlike a polynomial, a [smoothing penalty]{.hl} keeps it from following the noise
+`f(x₂)` is a smooth function of `x₂` whose shape is estimated from the data. It is built as a sum of simpler functions, the [basis functions]{.hl}, much as a polynomial is a sum of powers of `x`. A [smoothing penalty]{.hl} keeps it from following the noise.
 
 ## Basis functions
 
@@ -206,11 +205,11 @@ p_weighted <- ggplot(weighted, aes(time, value, group = fn)) +
 p_basis + p_weighted
 ```
 
-Each basis function is multiplied by a coefficient; the sum (salmon), plus the intercept, is the fitted curve. `bs = "cr"` asks for cubic regression splines, and `k = 10` gives 10 basis functions, one of which is absorbed by the intercept.
+Each basis function is multiplied by a coefficient; the sum (salmon), plus the intercept, is the fitted curve. `bs = "cr"` asks for [cubic regression splines]{.hl}, and `k = 10` gives 10 basis functions, one of which is absorbed by the intercept.
 
 ## How wiggly?
 
-- `k` sets the [maximum]{.hl} wiggliness: how many basis functions the smooth may use
+- `k` sets the maximum wiggliness: how many basis functions the smooth may use
 - The [smoothing parameter]{.hl} sets the actual wiggliness: the larger it is, the more wiggliness is penalised
 - `{mgcv}` estimates the smoothing parameter from the data, so the strategy is to set `k` high enough and let the penalty do the rest
 - The [effective degrees of freedom]{.hl} (edf) describe the result: an edf of 1 is a straight line, and higher values mean more wiggly curves
@@ -264,7 +263,9 @@ round(summary(m1)$s.table, 2)
 
 - The [parametric]{.hl} table works as in `lm()`: the intercept is the mean F2 of the English trajectories, and `l1Italian` is how much higher or lower the Italian trajectories are on average
 - The [smooth]{.hl} table has one row per smooth: `edf` close to 9 means a very wiggly curve, close to 1 a straight line
-- The F test asks whether a smooth is flat, so two identical curves would both come out significant. Testing whether two smooths [differ]{.hl} needs a different model, later in this lecture
+
+
+The F test asks whether a smooth is flat, so two identical curves would both come out significant. Testing whether two smooths differ needs a different model, later in this lecture.
 
 ## Plotting with `{tidygam}`
 
@@ -295,13 +296,14 @@ k.check(m1)
 
 - `k'` is the number of basis functions available; `edf` is how many the smooth used
 - A [k-index]{.hl} below 1 with a small p-value suggests there is pattern left in the residuals that more basis functions could capture
-- Raise `k` (for example to 15) and refit: if the curves and the edf barely change, `k` was high enough
+
+
+To be sure, raise `k` (for example to 15) and refit. If the curves and the edf barely change, `k` was high enough.
 
 ## Choosing `k`
 
 - Start from what you expect: a formant trajectory over 11 points rarely needs more than 10 basis functions; a pitch contour over a whole sentence may need 20 or more
-- Look at the fitted curves against the data
-- Compare `edf` with `k'`, and use `k.check()`
+- Look at the fitted curves against the data, compare `edf` with `k'`, and use `k.check()`
 
 . . .
 
@@ -317,7 +319,7 @@ _Source: Garland et al. (2011), Current Biology_
 
 ## Reference and difference smooths
 
-To test whether two curves differ, the model needs a term for the difference. With an [ordered factor]{.hl} in `by`, `s(time)` becomes the smooth of the reference level, and `s(time, by = l1_o)` the difference between the other level and the reference.
+To test whether two curves differ, the model needs a term for the difference. With an [ordered factor]{.hl} in `by`, `s(time)` becomes the [reference smooth]{.hl} for the first level, and `s(time, by = l1_o)` the difference between the other level and the reference.
 
 ```{r}
 price <- mutate(price, l1_o = as.ordered(l1))
@@ -333,8 +335,7 @@ round(summary(m2)$p.table, 2)
 round(summary(m2)$s.table, 2)
 ```
 
-- `s(time)` is the English trajectory
-- `s(time):l1_oItalian` is the [difference smooth]{.hl}: the Italian trajectory minus the English one, apart from the overall difference in height captured by `l1_oItalian`
+- `s(time)` is the English trajectory, and `s(time):l1_oItalian` is the [difference smooth]{.hl}: the Italian trajectory minus the English one, apart from the overall difference in height captured by `l1_oItalian`
 - `m1` and `m2` fit the same curves in two parametrisations
 
 ## Plotting the difference {.smaller}
@@ -367,7 +368,7 @@ m2_bin <- bam(f2 ~ s(time, k = 10) + s(time, by = is_italian, k = 10),
               data = price, method = "ML")
 ```
 
-- With a numeric 0/1 `by` variable, the smooth is not centred, so a single term covers both the difference in height and the difference in shape
+- In a [binary smooth]{.hl}, the `by` variable is numeric (0 or 1), so the smooth is not centred, so a single term covers both the difference in height and the difference in shape
 - Its p-value tests both differences at once, which is often the question of interest
 
 ## Which test to report?
@@ -384,7 +385,7 @@ He calls the binary smooth probably ideal when, as here, a single difference bet
 
 ## The catch {.smaller}
 
-These models treat all 2,200 measurements as independent. They are not: 11 come from each token, and 110 from each speaker.
+These models treat all 2,200 measurements as independent, although 11 come from each token and 110 from each speaker.
 
 ```{r, fig.height = 2.3}
 tibble(res = residuals(m2), lagged = lag(res), time = price$time) |>

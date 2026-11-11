@@ -117,9 +117,10 @@ In `{mgcv}`, random effects are written as smooth terms, so the same function fi
 
 ## Two levels of dependency
 
-- Within a [trajectory]{.hl}: neighbouring measurements of the same token are more similar than measurements far apart
-- Within a [speaker]{.hl}: the 110 measurements of a speaker share that speaker's vocal tract and habits; in real data, the same holds for words
-- Lecture 4's model ignored both, so its confidence intervals were too narrow
+- Neighbouring measurements of the same token are more similar than measurements far apart: dependency within a [trajectory]{.hl}
+- The 110 measurements of a speaker share that speaker's vocal tract and habits: dependency within a [speaker]{.hl}, and in real data within a word too
+
+Lecture 4's model ignored both, so its confidence intervals were too narrow.
 
 ## Residual autocorrelation {.smaller}
 
@@ -205,7 +206,7 @@ One line per speaker. Intercepts shift each speaker's curve up or down, slopes t
 
 ## Random smooths
 
-- `bs = "fs"` fits one smooth per speaker, with a shared smoothing parameter, much like random slopes share one variance
+- `bs = "fs"` fits one smooth per speaker, with a [shared smoothing parameter]{.hl}, much like random slopes share one variance
 - `m = 1` changes the penalty so that each speaker's smooth is pulled toward a flat line, as a random effect should be (Sóskuthy, 2017)
 - `k` applies to each speaker: 20 speakers with `k = 5` add 100 coefficients. Keep `k` low; too many coefficients for the data stops the model with an error
 - Many levels make random smooths slow and memory-hungry
@@ -214,7 +215,9 @@ One line per speaker. Intercepts shift each speaker's curve up or down, slopes t
 
 - Our groups differ [between]{.hl} speakers: each speaker is English or Italian, so the difference smooth cannot vary by speaker
 - When a comparison is [within]{.hl} speakers, say two vowels from every speaker, the model also needs speakers to differ in the vowel difference, like a by-speaker random slope in `lmer()`
-- One way is a random smooth for every speaker and vowel combination: `s(time, speaker_vowel, bs = "fs", m = 1)`. Sóskuthy (2021) compares this and other options in simulations
+
+
+One way is a random smooth for every speaker and vowel combination, `s(time, speaker_vowel, bs = "fs", m = 1)`. Sóskuthy (2021) compares this and other options in simulations.
 
 # Autocorrelation
 
@@ -228,8 +231,8 @@ _Source: Prat, Taub & Yovel (2015), Science Advances_
 
 Random smooths by speaker handle dependencies within speakers. For the dependencies within each trajectory, there are two options:
 
-- [Random smooths by trajectory]{.hl}: `s(time, traj, bs = "fs", m = 1)`, one smooth for each of the 200 tokens
-- An [AR1 error model]{.hl}: the error at each measurement is partly predicted from the error at the previous measurement, with the correlation `rho`
+- [Random smooths by trajectory]{.hl}, `s(time, traj, bs = "fs", m = 1)`, give each of the 200 tokens its own smooth
+- An [AR1 error model]{.hl} predicts the error at each measurement partly from the error at the previous one, with the correlation `rho`
 
 ## An AR1 model {.smaller}
 
@@ -263,7 +266,7 @@ list(`GAM, no random effects` = residuals(m_gam),
   labs(x = "Lag (measurements)", y = "Autocorrelation")
 ```
 
-For the AR1 model, the autocorrelation is computed on the standardised residuals, `m_ar$std.rsd`, which take the error model into account.
+For the AR1 model, the autocorrelation is computed on the [standardised residuals]{.hl}, `m_ar$std.rsd`, which take the error model into account.
 
 ## Random smooths or AR1?
 
@@ -323,7 +326,7 @@ predict_gam(m_dur, series = "time", length_out = 50,
   theme(legend.position = "right")
 ```
 
-`exclude_terms` removes the random smooths, so the curves are for an average speaker.
+`exclude_terms` removes the random smooths, so the curves are for an [average speaker]{.hl}.
 
 ## The surface {.smaller}
 
