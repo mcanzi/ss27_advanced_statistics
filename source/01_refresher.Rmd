@@ -100,6 +100,17 @@ lex
 
 `r nrow(lex)` rows: one per participant and word. We know the truth, because we wrote it: frequent words are faster, long words are slower, L2 speakers are slower overall, and frequency matters more for them.
 
+## A first look
+
+```{r, echo = FALSE, fig.height = 4.2}
+ggplot(lex, aes(x = log_freq, y = rt)) +
+  geom_point(colour = muted, alpha = 0.15, size = 1.2) +
+  stat_summary(aes(group = word), fun = mean, geom = "point", colour = kingfisher, size = 2.6) +
+  labs(x = "log10 frequency", y = "RT (ms)")
+```
+
+Grey: every response. Salmon: the mean RT for each word. Responses are noisy, but frequent words are faster on average.
+
 # The linear model
 
 ::: {.fact}
@@ -119,6 +130,24 @@ _Source: Aubin & Jouventin (1998), Proceedings of the Royal Society B_
 . . .
 
 `lm()` finds the intercept and slope that minimise the sum of squared residuals: [least squares]{.hl}.
+
+## Intercept, slope and residuals
+
+```{r, echo = FALSE, fig.height = 4.3}
+wm <- summarise(lex, rt = mean(rt), .by = c(word, log_freq))
+mw <- lm(rt ~ log_freq, data = wm)
+ggplot(augment(mw), aes(x = log_freq, y = rt)) +
+  geom_abline(intercept = coef(mw)[1], slope = coef(mw)[2], colour = pandan, linewidth = 1.3) +
+  geom_segment(aes(xend = log_freq, yend = .fitted), colour = vine, linewidth = 0.8) +
+  geom_point(colour = kingfisher, size = 2.6) +
+  annotate("point", x = 0, y = coef(mw)[1], colour = hornbill, size = 4) +
+  annotate("text", x = 0.15, y = coef(mw)[1], label = "intercept", colour = hornbill, hjust = 0, size = 5) +
+  geom_vline(xintercept = 0, colour = muted, linetype = "dashed") +
+  scale_x_continuous(limits = c(0, 6.2)) +
+  labs(x = "log10 frequency", y = "Mean RT per word (ms)")
+```
+
+Word means, the regression line, and each word's residual (vertical lines). The intercept sits at log frequency 0, far from the data.
 
 ## One predictor
 
@@ -143,6 +172,24 @@ coef(lm(rt ~ freq_c, data = lex))
 . . .
 
 [Centering]{.hl} moves 0 to the mean. The slope stays the same; the intercept becomes the predicted RT for a word of average frequency.
+
+## Centering, visually
+
+```{r, echo = FALSE, fig.height = 4}
+wm2 <- mutate(wm, `Raw log frequency` = log_freq, `Centred log frequency` = log_freq - mean(lex$log_freq)) |>
+  pivot_longer(c(`Raw log frequency`, `Centred log frequency`), names_to = "scale", values_to = "x") |>
+  mutate(scale = fct_rev(scale))
+icpt <- wm2 |> group_by(scale) |> summarise(b0 = coef(lm(rt ~ x, data = pick(x, rt)))[1])
+ggplot(wm2, aes(x = x, y = rt)) +
+  geom_vline(xintercept = 0, colour = muted, linetype = "dashed") +
+  geom_point(colour = kingfisher, size = 2) +
+  geom_smooth(method = "lm", se = FALSE, colour = pandan, fullrange = TRUE) +
+  geom_point(data = icpt, aes(x = 0, y = b0), colour = hornbill, size = 4) +
+  facet_wrap(~ scale, scales = "free_x") +
+  labs(x = NULL, y = "Mean RT per word (ms)")
+```
+
+Same line, same slope; only the position of 0, and with it the intercept (gold), changes.
 
 ## `tidy()` and `glance()`
 
@@ -185,6 +232,24 @@ coef(lm(rt ~ group, data = lex))
 
 With [treatment coding]{.hl}, R's default, `group` becomes a 0/1 dummy. The intercept is the mean of the reference level (L1, first in the alphabet), and `groupL2` is the difference between L2 and L1.
 
+## Two codings, one picture
+
+```{r, echo = FALSE, fig.height = 4.2}
+pm <- summarise(lex, rt = mean(rt), .by = c(participant, group))
+gm <- summarise(pm, rt = mean(rt), .by = group)
+ggplot(pm, aes(x = group, y = rt)) +
+  geom_hline(yintercept = gm$rt[gm$group == "L1"], colour = pandan, linetype = "dashed") +
+  geom_hline(yintercept = mean(gm$rt), colour = hornbill, linetype = "dashed") +
+  geom_jitter(width = 0.08, colour = muted, size = 2.4) +
+  geom_point(data = gm, colour = kingfisher, size = 5) +
+  annotate("text", x = 2.45, y = gm$rt[gm$group == "L1"], label = "treatment intercept\n(L1 mean)", colour = pandan, size = 4.2, vjust = -0.3) +
+  annotate("text", x = 2.45, y = mean(gm$rt), label = "sum-coding intercept\n(mean of means)", colour = hornbill, size = 4.2, vjust = -0.3) +
+  scale_x_discrete(expand = expansion(add = c(0.6, 1.2))) +
+  labs(x = NULL, y = "Mean RT per participant (ms)")
+```
+
+Grey: each participant's mean. Salmon: the group means.
+
 ## Sum coding
 
 ```{r}
@@ -208,7 +273,28 @@ coef(m2)
 
 Each slope is now the effect of one predictor [holding the other constant]{.hl}. The frequency slope shrinks from `r round(coef(lm(rt ~ freq_c, data = lex))["freq_c"])` to `r round(coef(m2)["freq_c"])` ms: in the simple model, frequency also stood in for length, because frequent words are shorter.
 
+## Simple and multiple slopes
+
+```{r, echo = FALSE, fig.height = 4.2}
+mw2 <- lm(rt ~ log_freq + length, data = left_join(wm, select(words, word, length), by = "word"))
+ggplot(left_join(wm, select(words, word, length), by = "word"), aes(x = log_freq, y = rt)) +
+  geom_point(aes(colour = length), size = 2.8) +
+  geom_abline(aes(intercept = coef(mw)[1], slope = coef(mw)[2], linetype = "frequency only"), colour = muted, linewidth = 1.1) +
+  geom_abline(aes(intercept = coef(mw2)[1] + coef(mw2)[3] * mean(words$length), slope = coef(mw2)[2], linetype = "length held at its mean"), colour = pandan, linewidth = 1.3) +
+  scale_colour_gradient(low = pandan, high = kingfisher, name = "Length") +
+  scale_linetype_manual(values = c(`frequency only` = "dashed", `length held at its mean` = "solid"), name = NULL) +
+  labs(x = "log10 frequency", y = "Mean RT per word (ms)")
+```
+
+Frequent words are also short (blue), so the frequency-only line (dashed) mixes the two effects. Holding length constant gives the shallower slope.
+
 ## Correlated predictors
+
+```{r, echo = FALSE, fig.height = 3}
+ggplot(words, aes(x = log_freq, y = length)) +
+  geom_jitter(height = 0.15, colour = kingfisher, size = 2.6) +
+  labs(x = "log10 frequency", y = "Length (letters)")
+```
 
 ```{r}
 cor(words$log_freq, words$length)
@@ -251,7 +337,7 @@ coef(m3)
 
 `freq_c * group` is short for `freq_c + group + freq_c:group`. The [interaction]{.hl} term `freq_c:group1` says how much the frequency slope changes between the groups.
 
-## Reading the coefficients
+## Reading the coefficients {.smaller}
 
 With sum-coded `group` and centred `freq_c`:
 
@@ -300,7 +386,7 @@ ggplot(lex, aes(x = log_freq, y = rt, group = participant, colour = group)) +
 
 One line per participant: they differ in overall speed (intercepts) and in how much frequency helps them (slopes).
 
-## Fixed and random effects
+## Fixed and random effects {.smaller}
 
 - [Fixed effects]{.hl} are the predictors we want to estimate: frequency, length, group, their interaction
 - [Random effects]{.hl} model how grouping units vary around them: participants and words
@@ -404,13 +490,13 @@ round(coef(summary(m4)), 3)
 
 `{lmerTest}` adds degrees of freedom (Satterthwaite's approximation) and p-values to the fixed effects.
 
-## When things go wrong
+## When things go wrong {.smaller}
 
-- A [convergence warning]{.hl} means the optimiser may not have found the best estimates. Check the data and scaling, try another optimiser (`control = lmerControl(optimizer = "bobyqa")`), and simplify only if needed
+- A [convergence warning]{.hl} means the optimiser may not have found the best estimates. Check the data and scaling, try another optimiser (`lmerControl(optimizer = "bobyqa")`), and simplify only if needed
 - A [singular fit]{.hl} means some variance or correlation is estimated at its boundary, often a random-effect correlation of ±1 or a standard deviation of 0. The data cannot support that part of the structure
 - Simplify step by step and report what you removed: first correlations, then the random slopes that explain least
 
-## Reporting
+## Reporting {.smaller}
 
 A sentence for our model:
 
