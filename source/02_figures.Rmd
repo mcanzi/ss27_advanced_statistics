@@ -125,7 +125,7 @@ Every `ggplot2` figure starts from [data]{.hl}, a data frame with one row per ob
 
 ## A first plot
 
-```{r, fig.height = 3.4}
+```{r, fig.height = 3.0}
 ggplot(vowels, aes(x = F2, y = F1)) +
   geom_point()
 ```
@@ -134,7 +134,7 @@ All the data are there, but the axes run the wrong way for a vowel chart.
 
 ## A vowel chart
 
-```{r, fig.height = 2.8}
+```{r, fig.height = 2.5}
 ggplot(vowels, aes(x = F2, y = F1, colour = vowel)) +
   geom_point(alpha = 0.3) +
   scale_x_reverse(position = "top") +
@@ -145,12 +145,12 @@ Reversed axes put front vowels on the left and high vowels at the top, as in the
 
 ## Layers stack {.smaller}
 
-```{r, fig.height = 2.7}
-vowel_means <- summarise(vowels, F1 = mean(F1), F2 = mean(F2), .by = c(l1, vowel))
+```{r, fig.height = 2.5}
+overall_means <- summarise(vowels, F1 = mean(F1), F2 = mean(F2), .by = vowel)
 ggplot(vowels, aes(x = F2, y = F1, colour = vowel)) +
   geom_point(alpha = 0.15) +
   stat_ellipse(level = 0.68) +
-  geom_text(data = vowel_means, aes(label = vowel), fontface = "bold", size = 5) +
+  geom_text(data = overall_means, aes(label = vowel), fontface = "bold", size = 5) +
   scale_x_reverse(position = "top") +
   scale_y_reverse(position = "right") +
   theme(legend.position = "none")
@@ -160,7 +160,8 @@ Each layer can take its own data. The mappings in `ggplot()` apply to every laye
 
 ## Facets {.smaller}
 
-```{r, fig.height = 3.1}
+```{r, fig.height = 3.0}
+vowel_means <- summarise(vowels, F1 = mean(F1), F2 = mean(F2), .by = c(l1, vowel))
 ggplot(vowels, aes(x = F2, y = F1, colour = vowel)) +
   stat_ellipse(level = 0.68, linewidth = 1) +
   geom_text(data = vowel_means, aes(label = vowel), size = 4) +
@@ -202,7 +203,7 @@ _Source: Mills et al. (2013), PNAS_
 
 ## Mapping or setting?
 
-```{r, fig.height = 2.6}
+```{r, fig.height = 2.3}
 p_map <- ggplot(vowel_means, aes(F2, F1)) + geom_point(aes(colour = "blue"), size = 3)
 p_set <- ggplot(vowel_means, aes(F2, F1)) + geom_point(colour = "blue", size = 3)
 p_map + p_set
@@ -262,32 +263,33 @@ okabe
 
 ## Okabe–Ito in practice {.smaller}
 
-```{r, fig.height = 3.3}
+```{r, fig.height = 3.0}
 ggplot(vowels, aes(x = F2, y = F1, colour = vowel)) +
   geom_point(alpha = 0.3) +
   scale_colour_manual(values = okabe[2:7]) +
   scale_x_reverse(position = "top") + scale_y_reverse(position = "right") +
-  guides(colour = guide_legend(nrow = 1, override.aes = list(alpha = 1, size = 4)))
+  guides(colour = guide_legend(override.aes = list(alpha = 1, size = 4))) +
+  theme(legend.position = "right")
 ```
 
 The first colour is black, which disappears on a dark background. `override.aes` makes the legend keys solid while the points stay transparent.
 
 ## Sequential {.smaller}
 
-```{r, fig.height = 3.1}
+```{r, fig.height = 2.9}
 ggplot(vowels, aes(x = F2, y = F1, colour = duration)) +
   geom_point(alpha = 0.6) +
   scale_colour_viridis_c(option = "magma", begin = 0.2) +
   scale_x_reverse(position = "top") + scale_y_reverse(position = "right") +
   facet_wrap(~ l1) +
-  labs(colour = "Duration (ms)")
+  labs(colour = "Duration (ms)") + theme(legend.position = "right")
 ```
 
 [Viridis]{.hl} palettes rise evenly in lightness, so they also work in greyscale. `begin` drops the darkest end, which would vanish on this background.
 
 ## Diverging {.smaller}
 
-```{r, fig.height = 2.5}
+```{r, fig.height = 2.3}
 vowels |>
   summarise(duration = mean(duration), .by = c(speaker, l1, vowel)) |>
   mutate(relative = duration - mean(duration), .by = speaker) |>
@@ -295,21 +297,22 @@ vowels |>
   geom_tile() +
   scale_fill_gradient2(low = "#2166AC", mid = "white", high = "#B2182B", midpoint = 0,
                        limits = \(x) c(-1, 1) * max(abs(x))) +
-  facet_grid(l1 ~ ., scales = "free_y") +
-  labs(x = NULL, y = NULL, fill = "ms from the\nspeaker's mean")
+  facet_wrap(~ l1, ncol = 1, scales = "free_y") +
+  labs(x = NULL, y = "Speakers", fill = "ms from the\nspeaker's mean") +
+  theme(axis.text.y = element_blank(), panel.grid = element_blank(), legend.position = "right")
 ```
 
 Diverging palettes suit a meaningful midpoint. [Symmetric limits]{.hl} make equal distances from zero equally dark.
 
 ## Highlight instead {.smaller}
 
-```{r, fig.height = 3.1}
+```{r, fig.height = 2.9}
 focus <- filter(vowels, vowel %in% c("FLEECE", "KIT"))
 ggplot(vowels, aes(x = F2, y = F1)) +
   geom_point(colour = vine, alpha = 0.5) +
   geom_point(data = focus, aes(colour = vowel), alpha = 0.5) +
   scale_x_reverse(position = "top") + scale_y_reverse(position = "right") +
-  facet_wrap(~ l1)
+  facet_wrap(~ l1) + theme(legend.position = "right")
 ```
 
 With more than six to eight categories, readers can no longer match colours to labels. [Highlighting]{.hl} colours what the text is about and leaves the rest grey.
@@ -340,20 +343,21 @@ Readers compare [positions]{.hl} best and colours worst (after Cleveland & McGil
 
 ## Redundant coding {.smaller}
 
-```{r, fig.height = 3.1}
+```{r, fig.height = 2.8}
 speaker_means <- summarise(vowels, F1 = mean(F1), F2 = mean(F2), .by = c(speaker, l1, vowel))
 ggplot(speaker_means, aes(x = F2, y = F1, fill = l1, shape = l1)) +
   geom_point(size = 3, colour = floor_col, stroke = 0.6) +
   scale_shape_manual(values = c(English = 21, Italian = 24)) +
   scale_fill_manual(values = l1_colours) +
-  scale_x_reverse(position = "top") + scale_y_reverse(position = "right")
+  scale_x_reverse(position = "top") + scale_y_reverse(position = "right") +
+  theme(legend.position = "right")
 ```
 
 Colour and shape show the same variable ([redundant coding]{.hl}), so the groups survive greyscale printing. Shapes 21–25 take a `fill` and an outline `colour`.
 
 ## Transparency and overplotting
 
-```{r, fig.height = 3.1}
+```{r, fig.height = 2.8}
 p_solid <- ggplot(vowels, aes(F2, F1)) + geom_point(colour = kingfisher)
 p_alpha <- ggplot(vowels, aes(F2, F1)) + geom_point(colour = kingfisher, alpha = 0.1)
 p_solid + p_alpha
@@ -386,7 +390,7 @@ Every aesthetic has a [scale]{.hl}: it turns data values into positions, colours
 
 ## Breaks and labels {.smaller}
 
-```{r, fig.height = 3.2}
+```{r, fig.height = 3.0}
 ggplot(vowels, aes(x = F2, y = F1, colour = vowel)) +
   geom_point(alpha = 0.2) +
   scale_x_reverse(position = "top", breaks = seq(800, 2800, by = 400),
@@ -438,7 +442,7 @@ guides(fill = "none")
 
 ## Direct labels {.smaller}
 
-```{r, fig.height = 3.4}
+```{r, fig.height = 3.2}
 ggplot(speaker_means, aes(x = F2, y = F1, colour = vowel)) +
   geom_point(alpha = 0.5) +
   geom_text(data = vowel_means, aes(label = vowel), fontface = "bold", size = 5) +

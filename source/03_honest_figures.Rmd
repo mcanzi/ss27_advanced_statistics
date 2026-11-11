@@ -190,8 +190,8 @@ tibble(type = factor(c("± 1 SD", "± 1 SE", "95% CI"), levels = c("± 1 SD", "�
 
 ```{r, fig.height = 3.0}
 ggplot(lex, aes(x = rt, y = group, fill = group)) +
-  geom_density_ridges(jittered_points = TRUE, position = "raincloud",
-                      alpha = 0.6, scale = 0.7, point_alpha = 0.15, point_size = 0.7,
+  geom_density_ridges(jittered_points = TRUE, position = "raincloud", colour = mist,
+                      alpha = 0.6, scale = 0.7, point_colour = mist, point_alpha = 0.2, point_size = 0.7,
                       quantile_lines = TRUE, quantiles = 2) +
   labs(x = "RT (ms)", y = NULL) +
   theme(legend.position = "none")
@@ -256,18 +256,18 @@ p_before + p_after
 
 ```{r, fig.height = 3.0}
 word_means <- summarise(lex, rt = mean(rt), .by = c(word, log_freq))
-twenty <- filter(word_means, word %in% sprintf("w%02d", 1:20))
-p_alpha <- ggplot(twenty, aes(x = rt, y = word)) + geom_point(colour = kingfisher, size = 2.5)
-p_ordered <- ggplot(twenty, aes(x = rt, y = fct_reorder(word, rt))) +
-  geom_point(colour = kingfisher, size = 2.5) + labs(y = "word")
-p_alpha + p_ordered & theme(axis.text.y = element_text(size = 10))
+twelve <- filter(word_means, word %in% sprintf("w%02d", 1:12))
+p_alpha <- ggplot(twelve, aes(x = rt, y = word)) + geom_point(colour = kingfisher, size = 3)
+p_ordered <- ggplot(twelve, aes(x = rt, y = fct_reorder(word, rt))) +
+  geom_point(colour = kingfisher, size = 3) + labs(y = "word")
+p_alpha + p_ordered & labs(x = "Mean RT (ms)")
 ```
 
 Alphabetical order is rarely the order that matters. `fct_reorder()` sorts the categories by a value, here the mean RT.
 
 ## Spaghetti
 
-```{r, fig.height = 3.2}
+```{r, fig.height = 2.8}
 ggplot(lex, aes(x = log_freq, y = rt, group = participant, colour = group)) +
   geom_smooth(method = "lm", se = FALSE, linewidth = 0.6) +
   labs(x = "log10 frequency", y = "Fitted RT (ms)", colour = NULL)
@@ -277,19 +277,18 @@ In this [spaghetti plot]{.hl}, thirty overlapping lines make it impossible to fo
 
 ## Small multiples with context {.smaller}
 
-```{r, fig.height = 2.5}
-some <- filter(lex, participant %in% sprintf("P%02d", c(1:4, 16:19)))
+```{r, fig.height = 2.6}
+some <- filter(lex, participant %in% c("P01", "P02", "P16", "P17"))
 others <- rename(lex, id = participant)
 ggplot(some, aes(x = log_freq, y = rt)) +
   geom_smooth(data = others, aes(group = id), method = "lm", se = FALSE,
               colour = vine, linewidth = 0.4) +
-  geom_point(aes(colour = group), alpha = 0.5, size = 1) +
-  geom_smooth(aes(colour = group), method = "lm", se = FALSE) +
-  facet_wrap(~ participant, nrow = 2) +
-  labs(x = "log10 frequency", y = "RT (ms)", colour = NULL)
+  geom_smooth(aes(colour = group), method = "lm", se = FALSE, linewidth = 1.4) +
+  facet_wrap(~ participant, nrow = 1) +
+  labs(x = "log10 frequency", y = "Fitted RT (ms)", colour = NULL)
 ```
 
-In these [small multiples]{.hl}, the background layer has no `participant` column, so it is drawn in every panel: each participant against all the others.
+In these [small multiples]{.hl}, the grey layer has no `participant` column, so it appears in every panel.
 
 ## Things to avoid
 
@@ -352,21 +351,22 @@ Predicted RTs for each group across the frequency range, with `length_c` held at
 
 ## Your own prediction plot {.smaller}
 
-```{r, fig.height = 2.8}
+```{r, fig.height = 2.6}
 word_group_means <- summarise(lex, rt = mean(rt), .by = c(word, log_freq, group))
 ggplot(pred, aes(x = log_freq, y = predicted, colour = group, fill = group)) +
   geom_point(data = word_group_means, aes(y = rt), alpha = 0.4, size = 1.5) +
   geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.25, colour = NA) +
   geom_line(linewidth = 1.2) +
   labs(x = "log10 frequency", y = "RT (ms)", colour = NULL, fill = NULL,
-       caption = "Lines and ribbons: mixed-model predictions with 95% CIs. Points: word means.")
+       caption = "Lines and ribbons: mixed-model predictions with 95% CIs. Points: word means.") +
+  theme(legend.position = "right")
 ```
 
 `ggpredict()` returns a data frame, so the plot is an ordinary `ggplot()` that you can style like any other.
 
 ## A coefficient plot {.smaller}
 
-```{r, fig.height = 2.8}
+```{r, fig.height = 2.5}
 coef(summary(m4)) |>
   as_tibble(rownames = "term") |>
   filter(term != "(Intercept)") |>
@@ -422,7 +422,7 @@ ggplot(participant_means, aes(x = group, y = rt)) +
 
 ## Labels that move aside {.smaller}
 
-```{r, fig.height = 3.1}
+```{r, fig.height = 2.9}
 slowest <- slice_max(word_means, rt, n = 5)
 ggplot(word_means, aes(x = log_freq, y = rt)) +
   geom_point(colour = kingfisher, size = 2.5) +
@@ -435,10 +435,11 @@ ggplot(word_means, aes(x = log_freq, y = rt)) +
 
 ## Combining figures {.smaller}
 
-```{r, fig.height = 2.6}
+```{r, fig.height = 2.4}
 p_pred <- ggplot(pred, aes(x = log_freq, y = predicted, colour = group, fill = group)) +
   geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.25, colour = NA) +
-  geom_line(linewidth = 1.2) + labs(x = "log10 frequency", y = "Predicted RT (ms)")
+  geom_line(linewidth = 1.2) + labs(x = "log10 frequency", y = "Predicted RT (ms)") +
+  theme(legend.position = "right")
 p_raw <- ggplot(participant_means, aes(x = group, y = rt, colour = group)) +
   geom_jitter(width = 0.1, height = 0, size = 2.5) + labs(x = NULL, y = "Mean RT (ms)") +
   theme(legend.position = "none")
