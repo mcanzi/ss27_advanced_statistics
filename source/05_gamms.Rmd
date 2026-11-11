@@ -1,0 +1,437 @@
+---
+title: "Generalised additive mixed models"
+subtitle: "Random smooths, autocorrelation and non-linear interactions"
+author: "Dr Massimiliano Canzi"
+knit: (function(input, ...) rmarkdown::render(input, output_dir = file.path(dirname(input), "..", "docs")))
+output:
+  revealjs::revealjs_presentation:
+    theme: black
+    css: theme-buttercup.css
+    highlight: zenburn
+    mathjax: null
+    incremental: true
+    transition: fade
+    background_transition: fade
+    self_contained: true
+    reveal_options:
+      width: 1050
+      height: 700
+      slideNumber: "c/t"
+      showSlideNumber: all
+      controls: true
+      touch: true
+      transitionSpeed: fast
+      navigationMode: linear
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                      comment = "",
+                      fig.width = 10, fig.height = 4.4, out.width = "100%")
+
+library(tidyverse)
+library(patchwork)
+library(mgcv)
+library(tidygam)
+
+source("slides_setup.R", local = knitr::knit_global())
+
+options(width = 70, pillar.print_min = 4, pillar.print_max = 4)
+```
+
+# Generalised additive mixed models
+
+<style>
+  :root {
+    --footer-text:  "Generalised additive mixed models";
+    --qr:           `r qr_css`;
+    --lecture:      `r lecture_label`;
+  }
+</style>
+
+::: {.fact}
+`Did you know:` Egyptian fruit bats live in colonies of hundreds to thousands of individuals, can live for at least 25 years in captivity, and are extremely [vocal]{.hl} in their social interactions.
+
+_Source: Prat, Taub & Yovel (2015), Science Advances_
+:::
+
+## Where we are
+
+Last time: smooth terms, difference smooths and significance testing with GAMs, in models that treated every measurement as independent. Today: the "mixed" part, following the second half of Sóskuthy's (2018) workshop.
+
+## Today
+
+1. Dependencies in curve data
+2. Random effects in GAMMs
+3. Autocorrelation
+4. Non-linear interactions
+5. Checking and reporting
+
+## The data {.smaller}
+
+The PRICE trajectories from lecture 4, now with an ordered factor for L1.
+
+```{r}
+set.seed(2029)
+speakers <- tibble(speaker = sprintf("S%02d", 1:20),
+                   l1 = rep(c("English", "Italian"), each = 10),
+                   s0 = rnorm(20, 0, 60),
+                   s_mid = rnorm(20, 0, 5))
+tokens <- crossing(speakers, token = 1:10) |>
+  mutate(traj = paste(speaker, token, sep = "."),
+         duration = round(runif(n(), 120, 300)),
+         t0 = rnorm(n(), 0, 40))
+price <- crossing(tokens, time = seq(0, 100, by = 10)) |>
+  arrange(traj, time) |>
+  mutate(onset = if_else(l1 == "English", 1250, 1320),
+         offset = if_else(l1 == "English", 2050, 1900) - 2 * (250 - duration),
+         mid = if_else(l1 == "English", 62, 50) + s_mid,
+         width = if_else(l1 == "English", 8, 14),
+         f2 = onset + (offset - onset) * plogis((time - mid) / width) + s0 + t0) |>
+  group_by(traj) |>
+  mutate(f2 = round(f2 + as.numeric(arima.sim(list(ar = 0.6), n = n(), sd = 30)))) |>
+  ungroup() |>
+  mutate(across(c(speaker, l1, traj), factor), l1_o = as.ordered(l1)) |>
+  select(speaker, l1, l1_o, traj, duration, time, f2)
+contrasts(price$l1_o) <- "contr.treatment"
+```
+
+# Dependencies
+
+::: {.fact}
+`Did you know:` Prat and colleagues recorded 22 Egyptian fruit bats for 75 days. Their calls carried information about the caller, the context and even the [addressee]{.hl}: the bat the call was directed at.
+
+_Source: Prat, Taub & Yovel (2016), Scientific Reports_
+:::
+
+## Four kinds of model
+
+| | Fixed effects only | With random effects |
+|:--|:--|:--|
+| Parametric terms | LM, `lm()` | LMER, `lmer()` |
+| Smooth terms | GAM, `bam()` | GAMM, `bam()` |
+
+. . .
+
+In `{mgcv}`, random effects are written as smooth terms, so the same function fits GAMs and GAMMs.
+
+## Two levels of dependency
+
+- Within a [trajectory]{.hl}: neighbouring measurements of the same token are more similar than measurements far apart
+- Within a [speaker]{.hl}: the 110 measurements of a speaker share that speaker's vocal tract and habits; in real data, the same holds for words
+- Lecture 4's model ignored both, so its confidence intervals were too narrow
+
+## Residual autocorrelation {.smaller}
+
+```{r}
+resid_acf <- function(res, traj, max_lag = 8) {
+  d <- tibble(res, traj)
+  map(0:max_lag, \(l) d |>
+    mutate(res_lag = lag(res, l), .by = traj) |>
+    summarise(acf = cor(res, res_lag, use = "complete.obs")) |>
+    mutate(lag = l)) |>
+    list_rbind()
+}
+m_gam <- bam(f2 ~ l1_o + s(time, k = 10) + s(time, by = l1_o, k = 10),
+             data = price, method = "ML")
+acf_gam <- resid_acf(residuals(m_gam), price$traj)
+```
+
+The [autocorrelation]{.hl} at lag 1 is the correlation between each residual and the residual one measurement earlier in the same trajectory; lag 2 skips one measurement, and so on. `itsadug::acf_resid()` does the same with base `R` graphics.
+
+## Residual autocorrelation
+
+```{r, fig.height = 2.5}
+ggplot(acf_gam, aes(x = lag, y = acf)) +
+  geom_hline(yintercept = 0, colour = muted) +
+  geom_segment(aes(xend = lag, yend = 0), colour = kingfisher, linewidth = 1.2) +
+  geom_point(colour = kingfisher, size = 3) +
+  labs(x = "Lag (measurements)", y = "Autocorrelation")
+```
+
+Neighbouring residuals correlate at about `r round(acf_gam$acf[2], 2)`, and the correlation is still clearly positive several measurements apart.
+
+# Random effects in GAMMs
+
+::: {.fact}
+`Did you know:` fruit bat pups raised without hearing adult bats kept producing underdeveloped, [pup-like]{.hl} calls far into adolescence.
+
+_Source: Prat, Taub & Yovel (2015), Science Advances_
+:::
+
+## Three kinds of random effect
+
+| `{mgcv}` term | Random effect |
+|:--|:--|
+| `s(speaker, bs = "re")` | random intercepts by speaker |
+| `s(speaker, time, bs = "re")` | random slopes over time by speaker |
+| `s(time, speaker, bs = "fs", m = 1)` | random smooths over time by speaker |
+
+. . .
+
+Watch the order: random slopes put the grouping factor first, random smooths put the continuous predictor first.
+
+## Fitting the three {.smaller}
+
+```{r}
+m_int <- bam(f2 ~ l1_o + s(time, k = 10) + s(time, by = l1_o, k = 10) +
+               s(speaker, bs = "re"),
+             data = price, method = "ML")
+m_slope <- bam(f2 ~ l1_o + s(time, k = 10) + s(time, by = l1_o, k = 10) +
+                 s(speaker, bs = "re") + s(speaker, time, bs = "re"),
+               data = price, method = "ML")
+m_smooth <- bam(f2 ~ l1_o + s(time, k = 10) + s(time, by = l1_o, k = 10) +
+                  s(time, speaker, bs = "fs", m = 1, k = 5),
+                data = price, method = "ML")
+```
+
+## What each one allows
+
+```{r speaker-fits, echo = FALSE, fig.height = 3.6}
+speaker_grid <- distinct(price, speaker, l1, l1_o) |>
+  crossing(time = seq(0, 100, by = 2))
+list(`Random intercepts` = m_int, `+ random slopes` = m_slope, `Random smooths` = m_smooth) |>
+  imap(\(m, name) mutate(speaker_grid, fit = as.numeric(predict(m, speaker_grid)), model = name)) |>
+  list_rbind() |>
+  mutate(model = fct_inorder(model)) |>
+  ggplot(aes(time, fit, group = speaker, colour = l1)) +
+  geom_line(alpha = 0.8) +
+  facet_wrap(~ model) +
+  labs(x = "Time (%)", y = "Fitted F2 (Hz)", colour = NULL) +
+  theme(legend.position = "right")
+```
+
+One line per speaker. Intercepts shift each speaker's curve up or down, slopes tilt it, and random smooths let each speaker's curve take its own shape.
+
+## Random smooths
+
+- `bs = "fs"` fits one smooth per speaker, with a shared smoothing parameter, much like random slopes share one variance
+- `m = 1` changes the penalty so that each speaker's smooth is pulled toward a flat line, as a random effect should be (Sóskuthy, 2017)
+- `k` applies to each speaker: 20 speakers with `k = 5` add 100 coefficients. Keep `k` low; too many coefficients for the data stops the model with an error
+- Many levels make random smooths slow and memory-hungry
+
+## The random slope equivalent
+
+- Our groups differ [between]{.hl} speakers: each speaker is English or Italian, so the difference smooth cannot vary by speaker
+- When a comparison is [within]{.hl} speakers, say two vowels from every speaker, the model also needs speakers to differ in the vowel difference, like a by-speaker random slope in `lmer()`
+- One way is a random smooth for every speaker and vowel combination: `s(time, speaker_vowel, bs = "fs", m = 1)`. Sóskuthy (2021) compares this and other options in simulations
+
+# Autocorrelation
+
+::: {.fact}
+`Did you know:` isolated fruit bat pups that heard recordings of adult bats developed a repertoire that [copied]{.hl} the playbacks.
+
+_Source: Prat, Taub & Yovel (2015), Science Advances_
+:::
+
+## Two solutions
+
+Random smooths by speaker handle dependencies within speakers. For the dependencies within each trajectory, there are two options:
+
+- [Random smooths by trajectory]{.hl}: `s(time, traj, bs = "fs", m = 1)`, one smooth for each of the 200 tokens
+- An [AR1 error model]{.hl}: the error at each measurement is partly predicted from the error at the previous measurement, with the correlation `rho`
+
+## An AR1 model {.smaller}
+
+```{r}
+m_noar <- bam(f2 ~ l1_o + s(time, k = 10) + s(time, by = l1_o, k = 10) +
+                s(time, speaker, bs = "fs", m = 1, k = 5),
+              data = price, method = "ML")
+rho <- itsadug::start_value_rho(m_noar)
+m_ar <- bam(f2 ~ l1_o + s(time, k = 10) + s(time, by = l1_o, k = 10) +
+              s(time, speaker, bs = "fs", m = 1, k = 5),
+            data = price, method = "ML", AR.start = price$time == 0, rho = rho)
+```
+
+- `start_value_rho()` estimates `rho` from the lag-1 autocorrelation of a model without the AR1 component
+- `AR.start` marks the first measurement of each trajectory, so the error model does not link one token to the next. The data must be sorted by trajectory and time
+
+## Did it work?
+
+```{r acf-compare, echo = FALSE, fig.height = 3.3}
+list(`GAM, no random effects` = residuals(m_gam),
+     `Random smooths by speaker` = residuals(m_noar),
+     `+ AR1` = m_ar$std.rsd) |>
+  imap(\(r, name) mutate(resid_acf(r, price$traj), model = name)) |>
+  list_rbind() |>
+  mutate(model = fct_inorder(model)) |>
+  ggplot(aes(x = lag, y = acf)) +
+  geom_hline(yintercept = 0, colour = muted) +
+  geom_segment(aes(xend = lag, yend = 0), colour = kingfisher, linewidth = 1.1) +
+  geom_point(colour = kingfisher, size = 2.5) +
+  facet_wrap(~ model) +
+  labs(x = "Lag (measurements)", y = "Autocorrelation")
+```
+
+For the AR1 model, the autocorrelation is computed on the standardised residuals, `m_ar$std.rsd`, which take the error model into account.
+
+## Random smooths or AR1?
+
+- Random smooths by trajectory become very slow with many trajectories: Sóskuthy (2018) puts the practical limit at around 500 to 800
+- AR1 adds almost no computing time, so for large data sets it is the only option
+- An AR1 model may not remove all autocorrelation for some kinds of curves: always check the residuals
+- `rho` is shared by all trajectories, and in `{mgcv}` the AR1 option is available in `bam()` only
+
+# Non-linear interactions
+
+::: {.fact}
+`Did you know:` fruit bat pups raised in three groups, each hearing a different playback, developed distinct [dialects]{.hl} from about six months of age, each closer to its own playback.
+
+_Source: Prat, Azoulay, Dor & Yovel (2017), PLoS Biology_
+:::
+
+## Duration and shape {.smaller}
+
+```{r, fig.height = 2.7}
+ggplot(price, aes(x = time, y = f2, group = traj, colour = duration)) +
+  geom_line(alpha = 0.6) +
+  scale_colour_viridis_c(option = "magma", begin = 0.2) +
+  facet_wrap(~ l1) +
+  labs(x = "Time (%)", y = "F2 (Hz)", colour = "Duration (ms)") +
+  theme(legend.position = "right")
+```
+
+Short vowels (dark) stop lower: the glide [undershoots]{.hl} its target. Duration changes the shape of the curve as well as its height.
+
+## `s()`, `te()` and `ti()`
+
+- `s(duration)` adds a smooth effect of duration on overall F2: it can shift whole curves, but not change their shape
+- `te(time, duration)` is a [tensor product smooth]{.hl}: one surface over time and duration, including both main effects
+- `ti(time, duration)` is the [tensor product interaction]{.hl} alone. Combined with `s(time)` and `s(duration)`, it separates the main effects from the interaction, so each gets its own row in the summary
+
+## The model {.smaller}
+
+```{r}
+m_dur <- bam(f2 ~ l1_o + s(time, k = 10) + s(time, by = l1_o, k = 10) +
+               s(duration) + ti(time, duration) +
+               s(time, speaker, bs = "fs", m = 1, k = 5),
+             data = price, method = "ML", AR.start = price$time == 0, rho = rho)
+round(summary(m_dur)$s.table, 2)
+```
+
+## Predictions at three durations {.smaller}
+
+```{r, fig.height = 2.7}
+predict_gam(m_dur, series = "time", length_out = 50,
+            values = list(duration = c(150, 220, 290)),
+            exclude_terms = "s(time,speaker)") |>
+  ggplot(aes(x = time, y = f2, colour = factor(duration), fill = factor(duration))) +
+  geom_ribbon(aes(ymin = lower_ci, ymax = upper_ci), alpha = 0.2, colour = NA) +
+  geom_line(linewidth = 1.2) +
+  facet_wrap(~ l1_o) +
+  labs(x = "Time (%)", y = "Predicted F2 (Hz)", colour = "Duration (ms)", fill = "Duration (ms)") +
+  theme(legend.position = "right")
+```
+
+`exclude_terms` removes the random smooths, so the curves are for an average speaker.
+
+## The surface {.smaller}
+
+```{r, fig.height = 2.6}
+predict_gam(m_dur, series = c("time", "duration"), length_out = 40,
+            values = list(l1_o = "English"), exclude_terms = "s(time,speaker)") |>
+  ggplot(aes(x = time, y = duration, fill = f2, z = f2)) +
+  geom_raster() +
+  geom_contour(colour = floor_col, alpha = 0.6, bins = 8) +
+  scale_fill_viridis_c(option = "mako", begin = 0.15) +
+  labs(x = "Time (%)", y = "Duration (ms)", fill = "Predicted\nF2 (Hz)") +
+  theme(legend.position = "right")
+```
+
+A heat map shows the whole interaction for English speakers, but prediction curves at a few durations are easier to read.
+
+# Checking and reporting
+
+::: {.fact}
+`Did you know:` the pups in the dialect experiment heard their mothers too, but their calls moved toward the playback of the whole colony. Prat and colleagues called this [crowd vocal learning]{.hl}.
+
+_Source: Prat, Azoulay, Dor & Yovel (2017), PLoS Biology_
+:::
+
+## Checking the model {.smaller}
+
+```{r}
+k.check(m_dur)
+```
+
+```{r, fig.height = 2.1}
+p_resid <- ggplot(tibble(fitted = fitted(m_dur), res = m_dur$std.rsd), aes(fitted, res)) +
+  geom_point(colour = kingfisher, alpha = 0.2) + labs(x = "Fitted F2 (Hz)", y = "Std. residual")
+p_qq <- ggplot(tibble(res = m_dur$std.rsd), aes(sample = res)) +
+  geom_qq(colour = kingfisher, alpha = 0.4) + geom_qq_line(colour = mist) + labs(x = "Theoretical", y = "Sample")
+p_resid + p_qq
+```
+
+## Testing the group difference {.smaller}
+
+```{r}
+m_dur_null <- bam(f2 ~ s(time, k = 10) + s(duration) + ti(time, duration) +
+                    s(time, speaker, bs = "fs", m = 1, k = 5),
+                  data = price, method = "ML", AR.start = price$time == 0, rho = rho)
+itsadug::compareML(m_dur_null, m_dur)
+```
+
+Both models have the same random effects, error model and `rho`, and are fitted with `method = "ML"`.
+
+## GAM versus GAMM {.smaller}
+
+```{r, fig.height = 2.0}
+compare <- list(l1_o = c("Italian", "English"))
+bind_rows(`GAM (lecture 4)` = get_difference(m_gam, "time", compare, length_out = 50),
+          `GAMM with AR1` = get_difference(m_dur, "time", compare, length_out = 50,
+                                           exclude_terms = "s(time,speaker)"),
+          .id = "model") |>
+  ggplot(aes(x = time, y = diff, colour = model, fill = model)) +
+  geom_hline(yintercept = 0, colour = muted, linetype = "dashed") +
+  geom_ribbon(aes(ymin = lower_ci, ymax = upper_ci), alpha = 0.25, colour = NA) +
+  geom_line(linewidth = 1.1) +
+  labs(x = "Time (%)", y = "Italian − English F2 (Hz)", colour = NULL, fill = NULL) +
+  theme(legend.position = "right")
+```
+
+The GAM treats the 2,200 measurements as independent; the GAMM knows they come from 200 tokens and 20 speakers.
+
+## Reporting {.smaller}
+
+> We fitted a GAMM to F2 (`bam()`, `{mgcv}`; Wood, 2017) with an ordered factor for L1 (reference: English), a reference smooth over time, a difference smooth for Italian speakers, a smooth for duration and a tensor product interaction between time and duration. Random smooths over time by speaker (`m = 1`, `k = 5`) and an AR1 error model (ρ = `r round(rho, 2)`) accounted for dependencies within speakers and trajectories.
+
+. . .
+
+Then report the model comparison, and show the prediction curves and the difference smooth with their confidence intervals.
+
+## Summary
+
+::: {.takeaway}
+- Curve data have dependencies within trajectories and within speakers (and words); ignoring them makes intervals too narrow
+- In `{mgcv}`, random intercepts and slopes use `bs = "re"`, and [random smooths]{.hl} use `bs = "fs"` with `m = 1`
+- An [AR1 error model]{.hl} handles autocorrelation within trajectories cheaply; check the standardised residuals
+- `ti()` adds a [non-linear interaction]{.hl} between two continuous predictors; show it with prediction curves at a few values
+- Test effects by comparing ML-fitted models with the same random effects and error model
+:::
+
+## References {.refs}
+
+- Coretta, S. (2024). _tidygam: Tidy prediction and plotting of generalised additive models_ (R package version 1.0.0). https://github.com/stefanocoretta/tidygam
+- [Sóskuthy, M. (2017). Generalised additive mixed models for dynamic analysis in linguistics: A practical introduction. _arXiv_, 1703.05339. https://arxiv.org/abs/1703.05339]{.hl}
+- Sóskuthy, M. (2018). _Introducing generalised additive models_ and _Becoming a GAM(M) warrior_ [Workshop slides]. Analysing Curves, University of Manchester, 29 May 2018.
+- Sóskuthy, M. (2021). Evaluating generalised additive mixed modelling strategies for dynamic speech analysis. _Journal of Phonetics_, 84, 101017. https://doi.org/10.1016/j.wocn.2020.101017
+- Wieling, M. (2018). Analyzing dynamic phonetic data using generalized additive mixed modeling: A tutorial focusing on articulatory differences between L1 and L2 speakers of English. _Journal of Phonetics_, 70, 86–116.
+- Wood, S. N. (2017). _Generalized additive models: An introduction with R_ (2nd ed.). CRC Press.
+
+## Sources of the animal facts {.refs}
+
+- Prat, Y., Azoulay, L., Dor, R., & Yovel, Y. (2017). Crowd vocal learning induces vocal dialects in bats: Playback of conspecifics shapes fundamental frequency usage by pups. _PLoS Biology_, 15(10), e2002556. https://doi.org/10.1371/journal.pbio.2002556
+- Prat, Y., Taub, M., & Yovel, Y. (2015). Vocal learning in a social mammal: Demonstrated by isolation and playback experiments in bats. _Science Advances_, 1(2), e1500019. https://doi.org/10.1126/sciadv.1500019
+- Prat, Y., Taub, M., & Yovel, Y. (2016). Everyday bat vocalizations contain information about emitter, addressee, context, and behavior. _Scientific Reports_, 6, 39419. https://doi.org/10.1038/srep39419
+
+## Slides and code
+
+<div class="qr-block">
+<img src="`r qr_uri`" alt="QR code linking to these slides">
+<div>
+<p>These slides</p>
+<p class="qr-link">mcanzi.github.io/ss27_advanced_statistics/<wbr>`r lecture_file`</p>
+<p>Code and all lectures</p>
+<p class="qr-link">github.com/mcanzi/ss27_advanced_statistics</p>
+</div>
+</div>

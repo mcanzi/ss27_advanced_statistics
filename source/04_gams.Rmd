@@ -1,0 +1,434 @@
+---
+title: "Generalised additive models"
+subtitle: "Modelling curves with smooth terms"
+author: "Dr Massimiliano Canzi"
+knit: (function(input, ...) rmarkdown::render(input, output_dir = file.path(dirname(input), "..", "docs")))
+output:
+  revealjs::revealjs_presentation:
+    theme: black
+    css: theme-buttercup.css
+    highlight: zenburn
+    mathjax: null
+    incremental: true
+    transition: fade
+    background_transition: fade
+    self_contained: true
+    reveal_options:
+      width: 1050
+      height: 700
+      slideNumber: "c/t"
+      showSlideNumber: all
+      controls: true
+      touch: true
+      transitionSpeed: fast
+      navigationMode: linear
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                      comment = "",
+                      fig.width = 10, fig.height = 4.4, out.width = "100%")
+
+library(tidyverse)
+library(patchwork)
+library(mgcv)
+library(tidygam)
+
+source("slides_setup.R", local = knitr::knit_global())
+
+options(width = 70, pillar.print_min = 4, pillar.print_max = 4)
+```
+
+# Generalised additive models
+
+<style>
+  :root {
+    --footer-text:  "Generalised additive models";
+    --qr:           `r qr_css`;
+    --lecture:      `r lecture_label`;
+  }
+</style>
+
+::: {.fact}
+`Did you know:` humpback whales produce a varied series of sounds for 7 to 30 minutes and then repeat the same series with considerable precision. Payne and McVay called each repeated series a [song]{.hl}.
+
+_Source: Payne & McVay (1971), Science_
+:::
+
+## Where we are
+
+So far, every model in this course has been linear in its predictors. Many linguistic data are [curves]{.hl}: formant trajectories, pitch contours, tongue contours, pupil size over a trial, looks to a target over time.
+
+. . .
+
+This lecture and the next one follow Márton Sóskuthy's GAMM workshop (Analysing Curves, University of Manchester, 2018) and his written tutorial (Sóskuthy, 2017), with simulated data and `ggplot2` figures.
+
+## Today
+
+1. Curves
+2. Smooth terms
+3. Fitting GAMs with `{mgcv}`
+4. Comparing curves
+
+## The data {.smaller}
+
+F2 of the PRICE vowel at 11 points (0% to 100% of the vowel), 10 tokens from each of 20 speakers: 10 with English and 10 with Italian as their L1.
+
+```{r}
+set.seed(2029)
+speakers <- tibble(speaker = sprintf("S%02d", 1:20),
+                   l1 = rep(c("English", "Italian"), each = 10),
+                   s0 = rnorm(20, 0, 60),
+                   s_mid = rnorm(20, 0, 5))
+tokens <- crossing(speakers, token = 1:10) |>
+  mutate(traj = paste(speaker, token, sep = "."),
+         duration = round(runif(n(), 120, 300)),
+         t0 = rnorm(n(), 0, 40))
+price <- crossing(tokens, time = seq(0, 100, by = 10)) |>
+  arrange(traj, time) |>
+  mutate(onset = if_else(l1 == "English", 1250, 1320),
+         offset = if_else(l1 == "English", 2050, 1900) - 2 * (250 - duration),
+         mid = if_else(l1 == "English", 62, 50) + s_mid,
+         width = if_else(l1 == "English", 8, 14),
+         f2 = onset + (offset - onset) * plogis((time - mid) / width) + s0 + t0) |>
+  group_by(traj) |>
+  mutate(f2 = round(f2 + as.numeric(arima.sim(list(ar = 0.6), n = n(), sd = 30)))) |>
+  ungroup() |>
+  mutate(across(c(speaker, l1, traj), factor)) |>
+  select(speaker, l1, traj, duration, time, f2)
+```
+
+## The data
+
+```{r}
+price
+```
+
+. . .
+
+What we built in: the glide from [a] to [ɪ] is smaller and earlier for the Italian speakers, short vowels undershoot the glide target, and neighbouring measurements in a token are correlated.
+
+## The trajectories
+
+```{r, fig.height = 2.8}
+ggplot(price, aes(x = time, y = f2, group = traj)) +
+  geom_line(colour = kingfisher, alpha = 0.25) +
+  facet_wrap(~ l1) +
+  labs(x = "Time (% of vowel duration)", y = "F2 (Hz)")
+```
+
+Each line is one token. The question: do the two groups produce different F2 trajectories?
+
+# Curves
+
+::: {.fact}
+`Did you know:` humpback whale song is built in layers. Single sounds ([units]{.hl}) form phrases, a repeated phrase forms a theme, and a fixed sequence of themes forms the song.
+
+_Source: Payne & McVay (1971), Science_
+:::
+
+## A straight line
+
+```{r straight-line, echo = FALSE, fig.height = 3.3}
+mean_traj <- price |>
+  filter(l1 == "English") |>
+  summarise(f2 = mean(f2), .by = time)
+m_line <- lm(f2 ~ time, data = mean_traj)
+p_fit <- ggplot(mean_traj, aes(time, f2)) +
+  geom_abline(intercept = coef(m_line)[1], slope = coef(m_line)[2], colour = pandan, linewidth = 1.2) +
+  geom_point(colour = kingfisher, size = 3) +
+  labs(title = "Mean English trajectory", x = "Time (%)", y = "F2 (Hz)")
+p_res <- ggplot(mutate(mean_traj, res = residuals(m_line)), aes(time, res)) +
+  geom_hline(yintercept = 0, colour = muted, linetype = "dashed") +
+  geom_line(colour = vine) +
+  geom_point(colour = kingfisher, size = 3) +
+  labs(title = "Residuals", x = "Time (%)", y = "Residual (Hz)")
+p_fit + p_res
+```
+
+The line misses the shape, and the residuals follow a pattern: neighbouring residuals are similar. This is [autocorrelation]{.hl}, and it makes standard errors unreliable.
+
+## Polynomials
+
+```{r polynomials, echo = FALSE, fig.height = 3.3}
+map(c(2, 3, 9), \(d) {
+  ggplot(mean_traj, aes(time, f2)) +
+    geom_smooth(method = "lm", formula = y ~ poly(x, d), se = FALSE, colour = pandan,
+                linewidth = 1.1, n = 200) +
+    geom_point(colour = kingfisher, size = 2.5) +
+    labs(title = paste("Degree", d), x = "Time (%)", y = if (d == 2) "F2 (Hz)" else NULL)
+}) |>
+  wrap_plots(nrow = 1)
+```
+
+- A quadratic or cubic term underfits: it cannot follow the flat start and the late rise
+- A high-degree polynomial overfits: it bends to follow the noise
+- Nothing in the data tells us which degree to choose
+
+# Smooth terms
+
+::: {.fact}
+`Did you know:` humpback whales off eastern Australia replaced their song within two years. A few singers from the west coast had brought a new song, and by 1998 only the [new song]{.hl} was heard.
+
+_Source: Noad et al. (2000), Nature_
+:::
+
+## Smooth terms
+
+A generalised additive model can contain [smooth terms]{.hl} next to the usual parametric terms:
+
+<div class="formula">y = α + β₁ · x₁ + f(x₂) + e</div>
+
+- `f(x₂)` is a smooth function of `x₂` whose shape is estimated from the data
+- Like a polynomial, it is a sum of simpler functions, the [basis functions]{.hl}
+- Unlike a polynomial, a [smoothing penalty]{.hl} keeps it from following the noise
+
+## Basis functions
+
+```{r basis, echo = FALSE, fig.height = 3.4}
+m_mean <- gam(f2 ~ s(time, bs = "cr", k = 10), data = mean_traj)
+grid <- tibble(time = 0:100)
+X <- predict(m_mean, newdata = grid, type = "lpmatrix")
+basis <- as_tibble(X[, -1]) |>
+  mutate(time = grid$time) |>
+  pivot_longer(-time, names_to = "fn", values_to = "value")
+weighted <- as_tibble(sweep(X[, -1], 2, coef(m_mean)[-1], `*`)) |>
+  mutate(time = grid$time) |>
+  pivot_longer(-time, names_to = "fn", values_to = "value")
+p_basis <- ggplot(basis, aes(time, value, group = fn)) +
+  geom_line(colour = pandan, linewidth = 0.9) +
+  labs(title = "9 basis functions", x = "Time (%)", y = NULL)
+p_weighted <- ggplot(weighted, aes(time, value, group = fn)) +
+  geom_line(colour = pandan, linewidth = 0.7, alpha = 0.7) +
+  geom_line(data = tibble(time = grid$time, value = drop(X[, -1] %*% coef(m_mean)[-1])),
+            aes(group = NULL), colour = kingfisher, linewidth = 1.6) +
+  labs(title = "Weighted by their coefficients, and their sum", x = "Time (%)", y = NULL)
+p_basis + p_weighted
+```
+
+Each basis function is multiplied by a coefficient; the sum (salmon), plus the intercept, is the fitted curve. `bs = "cr"` asks for cubic regression splines, and `k = 10` gives 10 basis functions, one of which is absorbed by the intercept.
+
+## How wiggly?
+
+- `k` sets the [maximum]{.hl} wiggliness: how many basis functions the smooth may use
+- The [smoothing parameter]{.hl} sets the actual wiggliness: the larger it is, the more wiggliness is penalised
+- `{mgcv}` estimates the smoothing parameter from the data, so the strategy is to set `k` high enough and let the penalty do the rest
+- The [effective degrees of freedom]{.hl} (edf) describe the result: an edf of 1 is a straight line, and higher values mean more wiggly curves
+
+## The smoothing parameter
+
+```{r penalty, echo = FALSE, fig.height = 3.6}
+sp_hat <- m_mean$sp
+fits <- map(c(1e-3, 1, 1e3, 1e6), \(m) {
+  fit <- gam(f2 ~ s(time, bs = "cr", k = 10), data = mean_traj, sp = sp_hat * m)
+  tibble(mult = m, time = grid$time, fit = as.numeric(predict(fit, grid)), edf = sum(fit$edf) - 1)
+}) |>
+  list_rbind() |>
+  mutate(label = paste0(c(`0.001` = "sp / 1000", `1` = "estimated sp",
+                          `1000` = "sp × 1000", `1e+06` = "sp × 1e6")[as.character(mult)],
+                        " (edf ", round(edf, 1), ")"),
+         label = fct_reorder(label, mult))
+ggplot(fits, aes(time, fit)) +
+  geom_point(data = mean_traj, aes(y = f2), colour = muted, size = 1.8) +
+  geom_line(colour = kingfisher, linewidth = 1.2) +
+  facet_wrap(~ label, nrow = 1) +
+  labs(x = "Time (%)", y = "F2 (Hz)")
+```
+
+The same 10 basis functions with four smoothing parameters. A large penalty pushes the smooth toward a straight line.
+
+# Fitting GAMs with `{mgcv}`
+
+::: {.fact}
+`Did you know:` over 11 years, [11 song types]{.hl} spread across the humpback whale populations of the South Pacific, usually starting off eastern Australia and reaching French Polynesia within about two years.
+
+_Source: Garland et al. (2011), Current Biology_
+:::
+
+## `gam()` and `bam()`
+
+- `{mgcv}` (Wood, 2017) fits GAMs with `gam()`, and with `bam()`, which is much faster on big data sets such as curves
+- `s(time)` is a smooth over time; `s(time, by = l1)` fits a separate smooth for each group
+- Smooths in a `by` model are centred on zero, so the group difference in height needs its own parametric term, `l1`
+- `method = "ML"` is needed to compare models that differ in their fixed effects; the default of `bam()` is `"fREML"`
+
+## A first GAM
+
+```{r}
+m1 <- bam(f2 ~ l1 + s(time, by = l1, k = 10), data = price, method = "ML")
+round(summary(m1)$p.table, 2)
+round(summary(m1)$s.table, 2)
+```
+
+## Reading the summary
+
+- The [parametric]{.hl} table works as in `lm()`: the intercept is the mean F2 of the English trajectories, and `l1Italian` is how much higher or lower the Italian trajectories are on average
+- The [smooth]{.hl} table has one row per smooth: `edf` close to 9 means a very wiggly curve, close to 1 a straight line
+- The F test asks whether a smooth is flat, so two identical curves would both come out significant. Testing whether two smooths [differ]{.hl} needs a different model, later in this lecture
+
+## Plotting with `{tidygam}`
+
+```{r, fig.height = 2.8}
+m1_pred <- predict_gam(m1, series = "time", length_out = 50)
+plot(m1_pred, series = "time", comparison = "l1")
+```
+
+`predict_gam()` returns a tibble of predictions with standard errors and 95% confidence intervals; its `plot()` method draws them with `ggplot2`.
+
+## Your own plot {.smaller}
+
+```{r, fig.height = 3.0}
+ggplot(m1_pred, aes(x = time, y = f2, colour = l1, fill = l1)) +
+  geom_ribbon(aes(ymin = lower_ci, ymax = upper_ci), alpha = 0.3, colour = NA) +
+  geom_line(linewidth = 1.2) +
+  labs(x = "Time (% of vowel duration)", y = "Predicted F2 (Hz)", colour = NULL, fill = NULL) +
+  theme(legend.position = "right")
+```
+
+`m1_pred` is an ordinary tibble with the predictor values, the predicted `f2`, its standard error `se`, and the limits `lower_ci` and `upper_ci`.
+
+## Is `k` high enough?
+
+```{r}
+k.check(m1)
+```
+
+- `k'` is the number of basis functions available; `edf` is how many the smooth used
+- A [k-index]{.hl} below 1 with a small p-value suggests there is pattern left in the residuals that more basis functions could capture
+- Raise `k` (for example to 15) and refit: if the curves and the edf barely change, `k` was high enough
+
+## Choosing `k`
+
+- Start from what you expect: a formant trajectory over 11 points rarely needs more than 10 basis functions; a pitch contour over a whole sentence may need 20 or more
+- Look at the fitted curves against the data
+- Compare `edf` with `k'`, and use `k.check()`
+
+. . .
+
+In Sóskuthy's (2018) workshop example, `gam.check()` flagged smooths whose wiggliness simulations showed to be fine. Use these checks as guides, together with the plots.
+
+# Comparing curves
+
+::: {.fact}
+`Did you know:` in each humpback whale population, only [males]{.hl} sing, and all of them sing the current version of the song, which keeps changing over the years.
+
+_Source: Garland et al. (2011), Current Biology_
+:::
+
+## Reference and difference smooths
+
+To test whether two curves differ, the model needs a term for the difference. With an [ordered factor]{.hl} in `by`, `s(time)` becomes the smooth of the reference level, and `s(time, by = l1_o)` the difference between the other level and the reference.
+
+```{r}
+price <- mutate(price, l1_o = as.ordered(l1))
+contrasts(price$l1_o) <- "contr.treatment"
+m2 <- bam(f2 ~ l1_o + s(time, k = 10) + s(time, by = l1_o, k = 10),
+          data = price, method = "ML")
+```
+
+## The difference smooth
+
+```{r}
+round(summary(m2)$p.table, 2)
+round(summary(m2)$s.table, 2)
+```
+
+- `s(time)` is the English trajectory
+- `s(time):l1_oItalian` is the [difference smooth]{.hl}: the Italian trajectory minus the English one, apart from the overall difference in height captured by `l1_oItalian`
+- `m1` and `m2` fit the same curves in two parametrisations
+
+## Plotting the difference {.smaller}
+
+```{r, fig.height = 3.0}
+m2_diff <- get_difference(m2, "time", list(l1_o = c("Italian", "English")), length_out = 50)
+ggplot(m2_diff, aes(x = time, y = diff)) +
+  geom_hline(yintercept = 0, colour = muted, linetype = "dashed") +
+  geom_ribbon(aes(ymin = lower_ci, ymax = upper_ci), fill = kingfisher, alpha = 0.3) +
+  geom_line(colour = kingfisher, linewidth = 1.2) +
+  labs(x = "Time (% of vowel duration)", y = "Italian − English F2 (Hz)")
+```
+
+Where the 95% confidence interval excludes zero, the curves differ. `plot(m2_diff)` shades those stretches automatically.
+
+## Model comparison {.smaller}
+
+```{r}
+m2_null <- bam(f2 ~ s(time, k = 10), data = price, method = "ML")
+itsadug::compareML(m2_null, m2)
+```
+
+The null model drops both the height difference and the difference smooth. Both models are fitted with `method = "ML"`.
+
+## The binary smooth
+
+```{r, eval = FALSE}
+price <- mutate(price, is_italian = as.numeric(l1 == "Italian"))
+m2_bin <- bam(f2 ~ s(time, k = 10) + s(time, by = is_italian, k = 10),
+              data = price, method = "ML")
+```
+
+- With a numeric 0/1 `by` variable, the smooth is not centred, so a single term covers both the difference in height and the difference in shape
+- Its p-value tests both differences at once, which is often the question of interest
+
+## Which test to report?
+
+Sóskuthy's (2018) recommendations:
+
+- Use the model summary only as a rough guide
+- Report the significance from a model comparison
+- Use prediction plots and the difference smooth for the qualitative discussion: where and how the curves differ
+
+. . .
+
+He calls the binary smooth probably ideal when, as here, a single difference between two curves is the question.
+
+## The catch {.smaller}
+
+These models treat all 2,200 measurements as independent. They are not: 11 come from each token, and 110 from each speaker.
+
+```{r, fig.height = 2.3}
+tibble(res = residuals(m2), lagged = lag(res), time = price$time) |>
+  filter(time > 0) |>
+  ggplot(aes(x = lagged, y = res)) +
+  geom_point(colour = kingfisher, alpha = 0.2) +
+  labs(x = "Residual at the previous time point", y = "Residual")
+```
+
+Neighbouring residuals are correlated, so the confidence intervals above are too narrow. Lecture 5 deals with this.
+
+## Summary
+
+::: {.takeaway}
+- Polynomials underfit or overfit curves, and leave the choice of degree to the analyst
+- A [smooth term]{.hl} is a weighted sum of basis functions; `k` sets the maximum wiggliness and the [smoothing penalty]{.hl} the actual wiggliness
+- The smooth table tests whether each smooth is flat; an ordered factor in `by` gives a reference smooth and a [difference smooth]{.hl}; plot the difference with its confidence interval
+- Report the significance from a model comparison; describe the curves with prediction plots and the difference smooth
+- Models without random effects or an error model are overconfident with curve data
+:::
+
+## References {.refs}
+
+- Coretta, S. (2024). _tidygam: Tidy prediction and plotting of generalised additive models_ (R package version 1.0.0). https://github.com/stefanocoretta/tidygam
+- [Sóskuthy, M. (2017). Generalised additive mixed models for dynamic analysis in linguistics: A practical introduction. _arXiv_, 1703.05339. https://arxiv.org/abs/1703.05339]{.hl}
+- Sóskuthy, M. (2018). _Introducing generalised additive models_ and _Becoming a GAM(M) warrior_ [Workshop slides]. Analysing Curves, University of Manchester, 29 May 2018.
+- Sóskuthy, M. (2021). Evaluating generalised additive mixed modelling strategies for dynamic speech analysis. _Journal of Phonetics_, 84, 101017. https://doi.org/10.1016/j.wocn.2020.101017
+- van Rij, J., Wieling, M., Baayen, R. H., & van Rijn, H. _itsadug: Interpreting time series and autocorrelated data using GAMMs_ (R package). https://CRAN.R-project.org/package=itsadug
+- Wood, S. N. (2017). _Generalized additive models: An introduction with R_ (2nd ed.). CRC Press.
+
+## Sources of the animal facts {.refs}
+
+- Garland, E. C., Goldizen, A. W., Rekdahl, M. L., Constantine, R., Garrigue, C., Hauser, N. D., Poole, M. M., Robbins, J., & Noad, M. J. (2011). Dynamic horizontal cultural transmission of humpback whale song at the ocean basin scale. _Current Biology_, 21(8), 687–691. https://doi.org/10.1016/j.cub.2011.03.019
+- Noad, M. J., Cato, D. H., Bryden, M. M., Jenner, M.-N., & Jenner, K. C. S. (2000). Cultural revolution in whale songs. _Nature_, 408, 537. https://doi.org/10.1038/35046199
+- Payne, R. S., & McVay, S. (1971). Songs of humpback whales. _Science_, 173(3997), 585–597. https://doi.org/10.1126/science.173.3997.585
+
+## Slides and code
+
+<div class="qr-block">
+<img src="`r qr_uri`" alt="QR code linking to these slides">
+<div>
+<p>These slides</p>
+<p class="qr-link">mcanzi.github.io/ss27_advanced_statistics/<wbr>`r lecture_file`</p>
+<p>Code and all lectures</p>
+<p class="qr-link">github.com/mcanzi/ss27_advanced_statistics</p>
+</div>
+</div>
