@@ -92,7 +92,7 @@ td <- crossing(speakers, token = 1:50) |>
   select(speaker, deleted, following, morph, rate, log_freq, age, gender, education, noise_cont, noise_bin)
 ```
 
-## What we built in
+## What we built in {.smaller}
 
 ```{r}
 td
@@ -137,7 +137,7 @@ Read each line as a rule: the condition, the number of tokens, the misclassified
 
 ## Trees overfit
 
-```{r overfit, echo = FALSE, fig.height = 3.0}
+```{r overfit, echo = FALSE, fig.height = 2.6}
 train <- filter(td, speaker %in% sprintf("S%02d", 1:30))
 test <- filter(td, !speaker %in% sprintf("S%02d", 1:30))
 acc <- function(pred, obs) mean(pred == obs)
@@ -162,7 +162,7 @@ tibble(model = rep(c("Deep tree", "Tree, depth 3", "Random forest"), each = 2),
   theme(legend.position = "right")
 ```
 
-Trained on 30 speakers, tested on 10 new ones. A deep tree learns the noise of its training data, and a small tree misses real structure. Small changes in the data can also change a tree completely.
+Trained on 30 speakers, tested on 10 new ones. The deep tree learns the noise of its training data and does worst on new speakers. The forest fits its training data perfectly too, so its training accuracy says little; on new speakers it matches the depth-3 tree. Its advantage is stability: small changes in the data can change a single tree completely.
 
 # From trees to forests
 
@@ -279,7 +279,7 @@ partial(rf_prob, td, "age", seq(18, 80, by = 2)) |>
   labs(x = "Age", y = "P(deleted)")
 ```
 
-The curve drops around 45, where the simulation put the change, although the formula said nothing about its shape.
+The simulation lowers deletion gradually between about 35 and 55, and the curve falls in that range without being given a shape. The later drop at 75 is not built in: age belongs to speakers, and with 40 speakers the curve also follows individuals.
 
 ## Interactions
 

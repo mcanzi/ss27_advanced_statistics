@@ -111,6 +111,7 @@ ggplot(speaker_means, aes(x = l1, y = value, colour = l1)) +
   geom_jitter(width = 0.12, height = 0, size = 2.5, show.legend = FALSE) +
   facet_wrap(~ measure, scales = "free_y", nrow = 1) +
   scale_colour_manual(values = c(pandan, kingfisher)) +
+  scale_x_discrete(labels = c(English = "EN", Italian = "IT")) +
   labs(x = NULL, y = "Speaker mean")
 ```
 
@@ -275,7 +276,7 @@ p_votes <- ggplot(speaker_votes, aes(x = italian, y = fct_reorder(speaker, itali
   geom_point(size = 2) +
   scale_colour_manual(values = c(pandan, kingfisher)) +
   labs(x = "Share of tokens classified as Italian", y = NULL, colour = NULL) +
-  theme(axis.text.y = element_blank(), legend.position = "inside", legend.position.inside = c(0.8, 0.2))
+  theme(axis.text.y = element_blank(), panel.grid.major.y = element_blank(), legend.position = "inside", legend.position.inside = c(0.8, 0.2))
 p_vot <- partial(rf_prob, accent, "vot", seq(10, 110, by = 5)) |>
   ggplot(aes(x = value, y = p)) +
   geom_line(colour = kingfisher, linewidth = 1.3) +
