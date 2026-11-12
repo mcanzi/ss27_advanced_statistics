@@ -1,0 +1,337 @@
+---
+title: "GAMMs in practice"
+subtitle: "A guided analysis of pupil curves"
+author: "Dr Massimiliano Canzi"
+knit: (function(input, ...) rmarkdown::render(input, output_dir = file.path(dirname(input), "..", "docs")))
+output:
+  revealjs::revealjs_presentation:
+    theme: black
+    css: theme-buttercup.css
+    highlight: zenburn
+    mathjax: null
+    incremental: true
+    transition: fade
+    background_transition: fade
+    self_contained: true
+    reveal_options:
+      width: 1050
+      height: 700
+      slideNumber: "c/t"
+      showSlideNumber: all
+      controls: true
+      touch: true
+      transitionSpeed: fast
+      navigationMode: linear
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                      comment = "",
+                      fig.width = 10, fig.height = 4.4, out.width = "100%")
+
+library(tidyverse)
+library(patchwork)
+library(mgcv)
+library(tidygam)
+
+source("slides_setup.R", local = knitr::knit_global())
+
+options(width = 70, pillar.print_min = 4, pillar.print_max = 4)
+```
+
+# GAMMs in practice
+
+<style>
+  :root {
+    --footer-text:  "GAMMs in practice";
+    --qr:           `r qr_css`;
+    --lecture:      `r lecture_label`;
+  }
+</style>
+
+::: {.fact}
+`Did you know:` goats have [horizontally elongated]{.hl} pupils. In a survey of 214 land species, this shape went with plant-eating prey animals, with few exceptions, while vertical slits were more common in ambush predators.
+
+_Source: Banks et al. (2015), Science Advances_
+:::
+
+## How today works
+
+Today you run a complete GAMM analysis yourselves, in pairs, on a new data set.
+
+- Each task slide says what to do, with code to complete where `___` appears
+- A checkpoint slide after some tasks shows what you should get
+- The solutions are in the `.Rmd` file of these slides, on GitHub. Try first; look only when you are stuck
+
+## The study
+
+A simulated pupillometry experiment on listening effort. 24 participants heard 12 sentences in quiet and 12 in background noise. Pupil size was recorded from sentence onset, baseline-corrected and averaged into 100 ms bins from 0 to 3,000 ms.
+
+. . .
+
+The research question: does noise change the pupil response, and from what point in time?
+
+## The data {.smaller}
+
+```{r}
+set.seed(2031)
+participants <- tibble(participant = sprintf("P%02d", 1:24),
+                       p_amp = rnorm(24, 0, 40), p_lat = rnorm(24, 0, 150), p_noise = rnorm(24, 0, 30))
+trials <- crossing(participants, condition = c("quiet", "noise"), trial = 1:12) |>
+  mutate(trial_id = paste(participant, condition, trial, sep = "."),
+         t_amp = rnorm(n(), 0, 40), t0 = rnorm(n(), 0, 15))
+pupil <- crossing(trials, time = seq(0, 3000, by = 100)) |>
+  arrange(trial_id, time) |>
+  mutate(peak = 180 + p_amp + if_else(condition == "noise", 90 + p_noise, 0) + t_amp - 4 * (trial - 6.5),
+         latency = 1200 + p_lat + if_else(condition == "noise", 250, 0),
+         pupil = t0 + peak * (time / latency)^3 * exp(3 * (1 - time / latency))) |>
+  group_by(trial_id) |>
+  mutate(pupil = round(pupil + as.numeric(arima.sim(list(ar = 0.8), n = n(), sd = 12)), 1)) |>
+  ungroup() |>
+  mutate(across(c(participant, condition, trial_id), factor),
+         condition = fct_relevel(condition, "quiet")) |>
+  select(participant, condition, trial, trial_id, time, pupil)
+```
+
+## Task 1: look at the data
+
+1. Run the code on the previous slide and look at `pupil`. How many rows are there, and how many trajectories?
+2. Compute the mean pupil size per participant, condition and time bin
+3. Plot one line per participant, with a panel for each condition
+
+. . .
+
+Before fitting anything, write down what you expect the model to find.
+
+## Checkpoint 1
+
+```{r check-1, echo = FALSE, fig.height = 3.4}
+pupil |>
+  summarise(pupil = mean(pupil), .by = c(participant, condition, time)) |>
+  ggplot(aes(x = time, y = pupil, group = participant)) +
+  geom_line(colour = kingfisher, alpha = 0.6) +
+  facet_wrap(~ condition) +
+  labs(x = "Time from sentence onset (ms)", y = "Pupil size (arbitrary units)")
+```
+
+`r nrow(pupil)` rows and `r n_distinct(pupil$trial_id)` trajectories. In noise, the response tends to be larger and later, with a lot of variation between participants.
+
+# Building the model
+
+::: {.fact}
+`Did you know:` when a goat lowers its head to graze, its eyes [rotate]{.hl} so that the pupils stay parallel to the ground. Grazing animals can rotate each eye by 50 degrees or more, about ten times the range of human eyes.
+
+_Source: Banks et al. (2015), Science Advances_
+:::
+
+## Task 2: a first GAM
+
+```{r, eval = FALSE}
+pupil$condition_o <- as.ordered(pupil$condition)
+contrasts(pupil$condition_o) <- "contr.treatment"
+m_gam <- bam(pupil ~ ___ + s(time, k = 20) + s(time, by = ___, k = 20),
+             data = pupil, method = "ML")
+summary(m_gam)
+```
+
+- Complete the formula with the ordered factor, as in lecture 3. Which level is the reference?
+- What does each smooth in the summary describe?
+- Is `k = 20` enough? Check with `k.check()`
+
+```{r task-2, include = FALSE}
+pupil$condition_o <- as.ordered(pupil$condition)
+contrasts(pupil$condition_o) <- "contr.treatment"
+m_gam <- bam(pupil ~ condition_o + s(time, k = 20) + s(time, by = condition_o, k = 20),
+             data = pupil, method = "ML")
+```
+
+## Task 3: is anything left in the residuals?
+
+```{r}
+resid_acf <- function(res, traj, max_lag = 8) {
+  d <- tibble(res, traj)
+  map(0:max_lag, \(l) d |>
+    mutate(res_lag = lag(res, l), .by = traj) |>
+    summarise(acf = cor(res, res_lag, use = "complete.obs")) |>
+    mutate(lag = l)) |>
+    list_rbind()
+}
+```
+
+The same function as in lecture 4. Compute the autocorrelation of the residuals of `m_gam` within trajectories, and plot it against the lag.
+
+## Task 4: random smooths
+
+Every participant heard both conditions, so the comparison is [within]{.hl} participants. Participants can differ in their curves and also in how noise changes their curves.
+
+```{r, eval = FALSE}
+pupil$part_cond <- interaction(pupil$participant, pupil$condition)
+m_rs <- bam(pupil ~ condition_o + s(time, k = 20) + s(time, by = condition_o, k = 20) +
+              s(time, ___, bs = "fs", m = 1, k = 5),
+            data = pupil, method = "ML")
+```
+
+- Why `part_cond` and not `participant`? Look back at "The random slope equivalent" in lecture 4
+- How many levels does `part_cond` have, and how many coefficients do the random smooths add?
+
+```{r task-4, include = FALSE}
+pupil$part_cond <- interaction(pupil$participant, pupil$condition)
+m_rs <- bam(pupil ~ condition_o + s(time, k = 20) + s(time, by = condition_o, k = 20) +
+              s(time, part_cond, bs = "fs", m = 1, k = 5),
+            data = pupil, method = "ML")
+```
+
+## Task 5: an AR1 error model
+
+```{r, eval = FALSE}
+rho <- itsadug::start_value_rho(m_rs)
+m_ar <- bam(pupil ~ condition_o + s(time, k = 20) + s(time, by = condition_o, k = 20) +
+              s(time, part_cond, bs = "fs", m = 1, k = 5),
+            data = pupil, method = "ML", AR.start = ___, rho = rho)
+```
+
+1. Mark the first bin of every trajectory in `AR.start`. Is the data frame sorted the way the AR1 model needs?
+2. Compare the autocorrelation of `residuals(m_gam)`, `residuals(m_rs)` and `m_ar$std.rsd`
+
+```{r task-5, include = FALSE}
+rho <- itsadug::start_value_rho(m_rs)
+m_ar <- bam(pupil ~ condition_o + s(time, k = 20) + s(time, by = condition_o, k = 20) +
+              s(time, part_cond, bs = "fs", m = 1, k = 5),
+            data = pupil, method = "ML", AR.start = pupil$time == 0, rho = rho)
+```
+
+## Checkpoint 2
+
+```{r check-2, echo = FALSE, fig.height = 3.3}
+list(`GAM` = residuals(m_gam),
+     `+ random smooths` = residuals(m_rs),
+     `+ AR1` = m_ar$std.rsd) |>
+  imap(\(r, name) mutate(resid_acf(r, pupil$trial_id), model = name)) |>
+  list_rbind() |>
+  mutate(model = fct_inorder(model)) |>
+  ggplot(aes(x = lag, y = acf)) +
+  geom_hline(yintercept = 0, colour = muted) +
+  geom_segment(aes(xend = lag, yend = 0), colour = kingfisher, linewidth = 1.1) +
+  geom_point(colour = kingfisher, size = 2.5) +
+  facet_wrap(~ model) +
+  labs(x = "Lag (bins)", y = "Autocorrelation")
+```
+
+Your `rho` should be close to `r round(rho, 2)`. With the AR1 model, little autocorrelation should remain.
+
+# Results
+
+::: {.fact}
+`Did you know:` goats can tell human facial expressions apart. Shown photos of the same unfamiliar person looking happy and angry, 20 goats preferred to approach and explore the [happy]{.hl} faces, mainly when these were on the right.
+
+_Source: Nawroth et al. (2018), Royal Society Open Science_
+:::
+
+## Task 6: check the model
+
+- Run `k.check(m_ar)`. Does any smooth need a higher `k`?
+- Plot the standardised residuals (`m_ar$std.rsd`) against the fitted values, and make a QQ plot. Lecture 4 has the code
+- Would you trust the confidence intervals of this model more than those of `m_gam`? Why?
+
+## Task 7: test the effect of noise
+
+Fit a null model without any term for condition, and compare it with `m_ar` using `itsadug::compareML()`.
+
+. . .
+
+Before you run it, decide what the null model must keep from `m_ar`, and what must go. If the two models differ in more than the condition terms, the comparison does not test noise alone.
+
+```{r task-7, include = FALSE}
+m_null <- bam(pupil ~ s(time, k = 20) + s(time, part_cond, bs = "fs", m = 1, k = 5),
+              data = pupil, method = "ML", AR.start = pupil$time == 0, rho = rho)
+```
+
+## Task 8: plot the results
+
+With `{tidygam}`, plot:
+
+1. the predicted curves for the two conditions, with 95% confidence intervals, for an average participant
+2. the difference smooth, noise minus quiet, with a line at zero
+
+. . .
+
+Use `exclude_terms` for the random smooths, as in lecture 4. Then make the figure ready for a paper, as in lecture 2: axis titles with units, a caption that says what the ribbons are, colours that survive greyscale.
+
+## Checkpoint 3
+
+```{r check-3, echo = FALSE, fig.height = 3.1}
+p_curves <- predict_gam(m_ar, series = "time", length_out = 61, exclude_terms = "s(time,part_cond)") |>
+  ggplot(aes(x = time, y = pupil, colour = condition_o, fill = condition_o)) +
+  geom_ribbon(aes(ymin = lower_ci, ymax = upper_ci), alpha = 0.25, colour = NA) +
+  geom_line(linewidth = 1.2) +
+  labs(x = "Time (ms)", y = "Predicted pupil size", colour = NULL, fill = NULL) +
+  theme(legend.position = "inside", legend.position.inside = c(0.8, 0.85))
+p_diff <- get_difference(m_ar, "time", list(condition_o = c("noise", "quiet")), length_out = 61,
+                         exclude_terms = "s(time,part_cond)") |>
+  as_tibble() |>
+  ggplot(aes(x = time, y = diff)) +
+  geom_hline(yintercept = 0, colour = muted, linetype = "dashed") +
+  geom_ribbon(aes(ymin = lower_ci, ymax = upper_ci), fill = kingfisher, alpha = 0.25) +
+  geom_line(colour = kingfisher, linewidth = 1.2) +
+  labs(x = "Time (ms)", y = "Noise − quiet")
+p_curves + p_diff
+```
+
+## Task 9: interpret and report
+
+- From roughly what time does the confidence interval of the difference exclude zero? Is that the same as "noise has an effect from that time on"?
+- Write a reporting paragraph for a methods and results section, like the one at the end of lecture 4: the model, the random effects and error model with their settings, the test and its result, and a figure caption
+
+. . .
+
+Swap paragraphs with another pair. Could they refit your model from your description alone?
+
+## If you finish early
+
+The simulation has one more effect built in: the pupil response gets smaller over the 12 trials, as participants tire or get used to the task.
+
+- Add `s(trial, k = 5)` to `m_ar`. Does the model improve?
+- Then add `ti(time, trial)`. Does fatigue only shrink the curve, or does it change its shape too?
+
+```{r extra, eval = FALSE, echo = FALSE}
+m_trial <- bam(pupil ~ condition_o + s(time, k = 20) + s(time, by = condition_o, k = 20) +
+                 s(trial, k = 5) + ti(time, trial, k = c(10, 5)) +
+                 s(time, part_cond, bs = "fs", m = 1, k = 5),
+               data = pupil, method = "ML", AR.start = pupil$time == 0, rho = rho)
+itsadug::compareML(m_ar, m_trial)
+```
+
+## Summary
+
+::: {.takeaway}
+1. Plot the raw curves first, and write down what you expect
+2. Fit the fixed structure with an [ordered factor]{.hl}: a reference smooth plus a difference smooth
+3. Check the residuals for [autocorrelation]{.hl}
+4. Add random smooths that match the design: within-participant conditions need participant × condition smooths
+5. Add an [AR1]{.hl} error model and check the standardised residuals
+6. Test with ML-fitted models that differ only in the terms of interest, then plot and report
+:::
+
+## References {.refs}
+
+- Coretta, S. (2024). _tidygam: Tidy prediction and plotting of generalised additive models_ (R package version 1.0.0). https://github.com/stefanocoretta/tidygam
+- [Sóskuthy, M. (2017). Generalised additive mixed models for dynamic analysis in linguistics: A practical introduction. _arXiv_, 1703.05339. https://arxiv.org/abs/1703.05339]{.hl}
+- van Rij, J., Hendriks, P., van Rijn, H., Baayen, R. H., & Wood, S. N. (2019). Analyzing the time course of pupillometric data. _Trends in Hearing_, 23, 1–22. https://doi.org/10.1177/2331216519832483
+- Wood, S. N. (2017). _Generalized additive models: An introduction with R_ (2nd ed.). CRC Press.
+
+## Sources of the animal facts {.refs}
+
+- Banks, M. S., Sprague, W. W., Schmoll, J., Parnell, J. A. Q., & Love, G. D. (2015). Why do animal eyes have pupils of different shapes? _Science Advances_, 1(7), e1500391. https://doi.org/10.1126/sciadv.1500391
+- Nawroth, C., Albuquerque, N., Savalli, C., Single, M.-S., & McElligott, A. G. (2018). Goats prefer positive human emotional facial expressions. _Royal Society Open Science_, 5(8), 180491. https://doi.org/10.1098/rsos.180491
+
+## Slides and code
+
+<div class="qr-block">
+<img src="`r qr_uri`" alt="QR code linking to these slides">
+<div>
+<p>These slides</p>
+<p class="qr-link">mcanzi.github.io/ss27_advanced_statistics/<wbr>`r lecture_file`</p>
+<p>Code and all lectures</p>
+<p class="qr-link">github.com/mcanzi/ss27_advanced_statistics</p>
+</div>
+</div>

@@ -395,7 +395,7 @@ tibble(res = residuals(m2), lagged = lag(res), time = price$time) |>
   labs(x = "Residual at the previous time point", y = "Residual")
 ```
 
-Neighbouring residuals are correlated, so the confidence intervals above are too narrow. Lecture 5 deals with this.
+Neighbouring residuals are correlated, so the confidence intervals above are too narrow. Lecture 4 deals with this.
 
 ## Summary
 

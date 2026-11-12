@@ -69,7 +69,7 @@ Last time: smooth terms, difference smooths and significance testing with GAMs, 
 
 ## The data {.smaller}
 
-The PRICE trajectories from lecture 4, now with an ordered factor for L1.
+The PRICE trajectories from lecture 3, now with an ordered factor for L1.
 
 ```{r}
 set.seed(2029)
@@ -120,7 +120,7 @@ In `{mgcv}`, random effects are written as smooth terms, so the same function fi
 - Neighbouring measurements of the same token are more similar than measurements far apart: dependency within a [trajectory]{.hl}
 - The 110 measurements of a speaker share that speaker's vocal tract and habits: dependency within a [speaker]{.hl}, and in real data within a word too
 
-Lecture 4's model ignored both, so its confidence intervals were too narrow.
+Lecture 3's model ignored both, so its confidence intervals were too narrow.
 
 ## Residual autocorrelation {.smaller}
 
@@ -380,7 +380,7 @@ Both models have the same random effects, error model and `rho`, and are fitted 
 
 ```{r, fig.height = 2.0}
 compare <- list(l1_o = c("Italian", "English"))
-bind_rows(`GAM (lecture 4)` = as_tibble(get_difference(m_gam, "time", compare, length_out = 50)),
+bind_rows(`GAM (lecture 3)` = as_tibble(get_difference(m_gam, "time", compare, length_out = 50)),
           `GAMM with AR1` = as_tibble(get_difference(m_dur, "time", compare, length_out = 50,
                                                      exclude_terms = "s(time,speaker)")),
           .id = "model") |>
