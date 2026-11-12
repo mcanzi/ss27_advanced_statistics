@@ -93,6 +93,20 @@ pdata <- crossing(trials, time = seq(0, 3000, by = 100)) |>
   select(participant, condition, trial, trial_id, time, pupil)
 ```
 
+## Single trials
+
+```{r trials, echo = FALSE, fig.height = 3.3}
+pdata |>
+  filter(participant == "P01", trial <= 4) |>
+  ggplot(aes(x = time, y = pupil, group = trial_id, colour = condition)) +
+  geom_line(linewidth = 0.9, show.legend = FALSE) +
+  scale_colour_manual(values = c(quiet = pandan, noise = kingfisher)) +
+  facet_wrap(~ condition) +
+  labs(x = "Time from sentence onset (ms)", y = "Pupil size (arbitrary units)")
+```
+
+Four trials per condition from participant P01. Single trials are noisy and differ in height: the random smooths and the AR1 model will have to deal with both.
+
 ## Task 1: look at the data
 
 1. Run the code on the previous slide and look at `pdata`. How many rows are there, and how many trajectories?

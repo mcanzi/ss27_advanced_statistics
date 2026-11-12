@@ -436,6 +436,24 @@ VarCorr(m4)
 - Participants' frequency slopes vary around the fixed slope with a standard deviation of about `r round(attr(VarCorr(m4)$participant, "stddev")[2])` ms
 - `Residual` is the variation left over within participants and words
 
+## Random effects, visually
+
+```{r caterpillar, echo = FALSE, fig.height = 3.6}
+as.data.frame(ranef(m4)) |>
+  filter(term == "(Intercept)") |>
+  mutate(grpvar = if_else(grpvar == "participant", "Participants", "Words"),
+         grp = fct_reorder(grp, condval)) |>
+  ggplot(aes(x = condval, y = grp)) +
+  geom_vline(xintercept = 0, colour = muted, linetype = "dashed") +
+  geom_linerange(aes(xmin = condval - 1.96 * condsd, xmax = condval + 1.96 * condsd), colour = vine, linewidth = 0.9) +
+  geom_point(colour = kingfisher, size = 1.8) +
+  facet_wrap(~ grpvar, scales = "free_y") +
+  labs(x = "Estimated intercept adjustment (ms)", y = NULL) +
+  theme(axis.text.y = element_blank(), panel.grid.major.y = element_blank())
+```
+
+Each participant's and each word's random intercept, with a 95% interval. Participants spread more widely than words, as the standard deviations on the previous slide say.
+
 ## Standard errors
 
 ```{r}
@@ -446,6 +464,27 @@ rbind(lm = coef(summary(lm(rt ~ freq_c * group + length_c, data = lex)))["freq_c
 . . .
 
 The estimate barely changes, but its standard error grows once the model knows that responses from the same participant and word belong together.
+
+## Wider intervals
+
+```{r se-plot, echo = FALSE, fig.height = 3.1}
+se_tab <- function(m, name) {
+  s <- coef(summary(m))
+  tibble(term = rownames(s), est = s[, 1], se = s[, 2], model = name)
+}
+bind_rows(se_tab(lm(rt ~ freq_c * group + length_c, data = lex), "lm()"), se_tab(m4, "lmer()")) |>
+  filter(term != "(Intercept)") |>
+  mutate(term = fct_rev(fct_inorder(term))) |>
+  ggplot(aes(x = est, y = term, colour = model)) +
+  geom_vline(xintercept = 0, colour = muted, linetype = "dashed") +
+  geom_pointrange(aes(xmin = est - 1.96 * se, xmax = est + 1.96 * se),
+                  position = position_dodge(width = 0.5), linewidth = 1, size = 0.5) +
+  scale_colour_manual(values = c(`lm()` = pandan, `lmer()` = kingfisher)) +
+  labs(x = "Estimate with 95% interval (ms)", y = NULL, colour = NULL) +
+  theme(legend.position = "right")
+```
+
+Estimate ± 1.96 SE for each fixed effect. The intervals widen most for `group1`, which varies between participants: only 30 participants stand behind it, not 1,200 responses.
 
 ## Partial pooling
 

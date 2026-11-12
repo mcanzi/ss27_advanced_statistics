@@ -96,6 +96,20 @@ price <- crossing(tokens, time = seq(0, 100, by = 10)) |>
 contrasts(price$l1_o) <- "contr.treatment"
 ```
 
+## Speakers and tokens
+
+```{r two-levels, echo = FALSE, fig.height = 3.3}
+price |>
+  filter(speaker %in% c("S01", "S02", "S11", "S12")) |>
+  mutate(panel = paste(speaker, l1, sep = ", ")) |>
+  ggplot(aes(x = time, y = f2, group = traj, colour = l1)) +
+  geom_line(alpha = 0.7, show.legend = FALSE) +
+  facet_wrap(~ panel, nrow = 1) +
+  labs(x = "Time (%)", y = "F2 (Hz)")
+```
+
+Ten tokens from each of four speakers. Each speaker's tokens sit at their own height, and within a token, neighbouring measurements move up and down together.
+
 # Dependencies
 
 ::: {.fact}

@@ -166,6 +166,21 @@ Every speaker's 40 tokens are in the data. A tree's bootstrap sample therefore a
 
 The OOB error assumes independent observations. With grouped data, it rewards predictors that merely identify the group (Roberts et al., 2017).
 
+## Speaker fingerprints
+
+```{r fingerprints, echo = FALSE, fig.height = 3.3}
+accent |>
+  mutate(speaker = fct_reorder(speaker, f0)) |>
+  ggplot(aes(x = speaker, y = f0, colour = l1)) +
+  geom_jitter(width = 0.15, height = 0, alpha = 0.5, size = 1.3) +
+  scale_colour_manual(values = c(pandan, kingfisher)) +
+  labs(x = "Speakers, ordered by mean f0", y = "f0 (Hz)", colour = NULL) +
+  theme(axis.text.x = element_blank(), panel.grid.major.x = element_blank(),
+        legend.position = "inside", legend.position.inside = c(0.12, 0.85))
+```
+
+Each column holds one speaker's 40 tokens. They cluster tightly, while English and Italian speakers are mixed along the whole range. A token's f0 tells the forest who is speaking, and the speaker's other tokens tell it the L1.
+
 ## Task 4: cross-validation by speaker
 
 ```{r, eval = FALSE}

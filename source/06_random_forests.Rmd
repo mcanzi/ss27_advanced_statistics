@@ -94,13 +94,30 @@ td <- crossing(speakers, token = 1:50) |>
 
 ## What we built in {.smaller}
 
-```{r}
-td
+```{r built-in, echo = FALSE, fig.height = 3.0}
+p_rate <- td |>
+  mutate(rate_bin = pmin(pmax(round(rate * 2) / 2, 3.5), 6.5)) |>
+  summarise(p = mean(deleted == "deleted"), n = n(), .by = c(following, rate_bin)) |>
+  ggplot(aes(x = rate_bin, y = p, colour = following)) +
+  geom_line(linewidth = 1.1) +
+  geom_point(aes(size = n), show.legend = FALSE) +
+  scale_colour_manual(values = c(kingfisher, hornbill, pandan)) +
+  scale_size_area(max_size = 3.5) +
+  labs(x = "Speech rate (syllables per second)", y = "Proportion deleted", colour = NULL) +
+  theme(legend.position = "inside", legend.position.inside = c(0.2, 0.85))
+p_age <- td |>
+  summarise(p = mean(deleted == "deleted"), .by = c(speaker, age, education)) |>
+  ggplot(aes(x = age, y = p, shape = education)) +
+  geom_point(colour = kingfisher, size = 2.8, stroke = 1.1) +
+  scale_shape_manual(values = c(school = 16, university = 1)) +
+  labs(x = "Age", y = "Proportion deleted per speaker", shape = NULL) +
+  theme(legend.position = "inside", legend.position.inside = c(0.8, 0.88))
+patchwork::wrap_plots(p_rate, p_age)
 ```
 
 . . .
 
-Deletion is more likely before a consonant, especially in fast speech, less likely in past tense forms, and more likely among speakers under about 45. Education has no effect, but older speakers more often left school early. `noise_cont` and `noise_bin` are pure noise.
+Deletion is more likely before a consonant, especially in fast speech (left), less likely in past tense forms, and more likely among speakers under about 45 (right). Education has no effect, but older speakers more often left school early (filled points). `noise_cont` and `noise_bin` are pure noise.
 
 # Decision trees
 
