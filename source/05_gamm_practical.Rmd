@@ -264,6 +264,7 @@ p_curves <- predict_gam(m_ar, series = "time", length_out = 61, exclude_terms = 
   ggplot(aes(x = time, y = pupil, colour = condition_o, fill = condition_o)) +
   geom_ribbon(aes(ymin = lower_ci, ymax = upper_ci), alpha = 0.25, colour = NA) +
   geom_line(linewidth = 1.2) +
+  scale_colour_manual(values = c(quiet = pandan, noise = kingfisher), aesthetics = c("colour", "fill")) +
   labs(x = "Time (ms)", y = "Predicted pupil size", colour = NULL, fill = NULL) +
   theme(legend.position = "inside", legend.position.inside = c(0.8, 0.85))
 p_diff <- get_difference(m_ar, "time", list(condition_o = c("noise", "quiet")), length_out = 61,

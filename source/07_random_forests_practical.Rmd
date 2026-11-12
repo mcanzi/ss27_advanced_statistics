@@ -238,7 +238,7 @@ _Source: Bossema (1979), Behaviour_
 
 ## Task 6: classify speakers
 
-The research question is about speakers, not tokens. Use the cross-validated predictions of the three-measure forest:
+The research question asks about speakers, so the last step goes from tokens to people. Use the cross-validated predictions of the three-measure forest:
 
 - For each held-out speaker, take the L1 that most of their 40 tokens were assigned to
 - How many of the 30 speakers are classified correctly? How does this compare with the token accuracy?

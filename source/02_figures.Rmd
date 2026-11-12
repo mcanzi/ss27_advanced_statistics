@@ -68,7 +68,7 @@ A figure is part of the evidence. Readers should be able to judge it for themsel
 ## Today
 
 1. Show the data
-2. Less is more
+2. Clutter and colour
 3. Models and uncertainty
 4. Publication-ready
 
@@ -221,7 +221,7 @@ In the caption or axis titles, tell the reader:
 - Whether points are jittered or lines smoothed
 - Whether any data were excluded, how many, and why
 
-# Less is more
+# Clutter and colour
 
 ::: {.fact}
 `Did you know:` arctic foxes come in two genetically fixed colour phases. The [white]{.hl} phase is white only in winter; the [blue]{.hl} phase is dark all year.
@@ -276,7 +276,7 @@ ggplot(word_group_means, aes(x = log_freq, y = rt, fill = group, shape = group))
   geom_point(size = 3, colour = floor_col, stroke = 0.6) +
   scale_shape_manual(values = c(L1 = 21, L2 = 24)) +
   scale_fill_manual(values = group_colours) +
-  labs(x = "log10 frequency", y = "Mean RT per word (ms)", fill = NULL, shape = NULL) +
+  labs(x = "log10 frequency", y = "Mean RT (ms)", fill = NULL, shape = NULL) +
   theme(legend.position = "right")
 ```
 

@@ -196,9 +196,8 @@ rf
 
 ## Out-of-bag error
 
-A bootstrap sample leaves out about a third of the observations (on average 1 − 1/e ≈ 37%). Each tree can therefore be tested on the tokens it never saw, its [out-of-bag]{.hl} (OOB) tokens.
+A bootstrap sample leaves out about a third of the observations (on average 1 − 1/e ≈ 37%). Each tree can therefore be tested on the tokens it never saw, its [out-of-bag]{.hl} (OOB) tokens. The OOB prediction for a token is the vote of the trees that did not train on it.
 
-- The OOB prediction for a token is the vote of the trees that did not train on it
 - The OOB prediction error, here `r round(rf$prediction.error, 3)`, estimates the error on new data without a separate test set
 - Compare it with a baseline: always guessing the more common outcome would be wrong `r round(1 - max(prop.table(table(td$deleted))), 3)` of the time
 
@@ -215,8 +214,8 @@ tibble(mtry = 1:9) |>
   labs(x = "mtry", y = "OOB error")
 ```
 
-- `num.trees`: more trees never hurt, they only take longer. Use enough that results do not change between seeds
-- `mtry` and `min.node.size` matter more. The defaults are often close to the best values, as here (the default in orange)
+- Extra trees (`num.trees`) cost computing time but do not make the forest worse. Use enough that results do not change between seeds
+- The settings `mtry` and `min.node.size` matter more. The defaults are often close to the best values, as here (the default in orange)
 
 # Variable importance
 
@@ -280,7 +279,7 @@ partial(rf_prob, td, "age", seq(18, 80, by = 2)) |>
   labs(x = "Age", y = "P(deleted)")
 ```
 
-The forest found the drop around 45 without being told its shape.
+The curve drops around 45, where the simulation put the change, although the formula said nothing about its shape.
 
 ## Interactions
 
@@ -311,8 +310,7 @@ _Source: van Noordwijk et al. (2018), Journal of Human Evolution_
 
 ## What forests are good at
 
-- Many predictors, including correlated ones, and more predictors than observations
-- Interactions and non-linear effects that nobody thought to put in a formula
+- Many predictors, even correlated ones or more predictors than observations, with interactions and non-linear effects that nobody thought to put in a formula
 - Prediction, with an honest estimate of the error from the OOB data
 
 ## What forests do not give you
