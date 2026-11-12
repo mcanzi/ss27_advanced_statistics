@@ -1,0 +1,378 @@
+---
+title: "Random forests"
+subtitle: "Trees, forests and variable importance"
+author: "Dr Massimiliano Canzi"
+knit: (function(input, ...) rmarkdown::render(input, output_dir = file.path(dirname(input), "..", "docs")))
+output:
+  revealjs::revealjs_presentation:
+    theme: black
+    css: theme-buttercup.css
+    highlight: zenburn
+    mathjax: null
+    incremental: true
+    transition: fade
+    background_transition: fade
+    self_contained: true
+    reveal_options:
+      width: 1050
+      height: 700
+      slideNumber: "c/t"
+      showSlideNumber: all
+      controls: true
+      touch: true
+      transitionSpeed: fast
+      navigationMode: linear
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                      comment = "",
+                      fig.width = 10, fig.height = 4.4, out.width = "100%")
+
+library(tidyverse)
+library(rpart)
+library(ranger)
+
+source("slides_setup.R", local = knitr::knit_global())
+
+options(width = 70, pillar.print_min = 4, pillar.print_max = 4)
+```
+
+# Random forests
+
+<style>
+  :root {
+    --footer-text:  "Random forests";
+    --qr:           `r qr_css`;
+    --lecture:      `r lecture_label`;
+  }
+</style>
+
+::: {.fact}
+`Did you know:` orangutans sometimes hold a bundle of leaves in front of their mouth when they give a "kiss squeak" at a predator. The leaves [lower the frequency]{.hl} of the call, and lower calls come from bigger orangutans.
+
+_Source: Hardus et al. (2009), Proceedings of the Royal Society B_
+:::
+
+## Where we are
+
+Every model so far started from a formula that we wrote: which predictors, which interactions, which curves. A [random forest]{.hl} works the other way round. It searches the predictors for splits that separate the outcomes, and finds interactions and non-linear effects without being told.
+
+. . .
+
+In linguistics, random forests are popular for data with many predictors that are correlated with each other, such as corpus and sociolinguistic data (Tagliamonte & Baayen, 2012). This lecture explains how they work; next time you build one yourselves.
+
+## Today
+
+1. Decision trees
+2. From trees to forests
+3. Variable importance
+4. Forests and regression models
+
+## The data {.smaller}
+
+A simulated sociolinguistic study of /t, d/ deletion, as in _mis'_ for _mist_: 40 speakers, 50 tokens each.
+
+```{r}
+set.seed(2032)
+speakers <- tibble(speaker = sprintf("S%02d", 1:40), age = round(runif(40, 18, 80)),
+                   gender = sample(rep(c("female", "male"), 20)), s0 = rnorm(40, 0, 0.5)) |>
+  mutate(education = if_else(age + rnorm(40, 0, 10) > 50, "school", "university"))
+td <- crossing(speakers, token = 1:50) |>
+  mutate(following = sample(c("consonant", "vowel", "pause"), n(), TRUE, prob = c(0.5, 0.3, 0.2)),
+         morph = sample(c("monomorpheme", "past"), n(), TRUE, prob = c(0.6, 0.4)),
+         rate = round(rnorm(n(), 5, 0.8), 2), log_freq = round(runif(n(), 1, 6), 2),
+         noise_cont = rnorm(n()), noise_bin = sample(c("a", "b"), n(), TRUE),
+         eta = -0.8 + s0 + 1.8 * (following == "consonant") + 0.4 * (following == "pause") -
+           1 * (morph == "past") + 0.9 * (rate - 5) * (following == "consonant") +
+           1.2 * plogis((45 - age) / 5) + 0.25 * (log_freq - 3.5),
+         deleted = factor(if_else(rbinom(n(), 1, plogis(eta)) == 1, "deleted", "retained"),
+                          levels = c("retained", "deleted"))) |>
+  mutate(across(c(speaker, gender, education, following, morph, noise_bin), factor)) |>
+  select(speaker, deleted, following, morph, rate, log_freq, age, gender, education, noise_cont, noise_bin)
+```
+
+## What we built in
+
+```{r}
+td
+```
+
+. . .
+
+Deletion is more likely before a consonant, especially in fast speech, less likely in past tense forms, and more likely among speakers under about 45. Education has no effect, but older speakers more often left school early. `noise_cont` and `noise_bin` are pure noise.
+
+# Decision trees
+
+::: {.fact}
+`Did you know:` orangutan kiss squeaks are highest when made with the lips alone, lower with a hand in front of the mouth, and [lowest]{.hl} with leaves.
+
+_Source: Hardus et al. (2009), Proceedings of the Royal Society B_
+:::
+
+## Splitting the data
+
+A [decision tree]{.hl} asks one yes/no question about one predictor, splits the data in two, and repeats the process in each half. The split chosen at each step is the one that makes the two halves as pure as possible, with mostly deleted or mostly retained tokens.
+
+. . .
+
+```{r}
+f <- deleted ~ following + morph + rate + log_freq + age + gender + education + noise_cont + noise_bin
+tree2 <- rpart(f, data = td, method = "class", control = rpart.control(maxdepth = 2))
+```
+
+## A tree with two levels {.smaller}
+
+```{r}
+tree2
+```
+
+Read each line as a rule: the condition, the number of tokens, the misclassified tokens, the majority class, and the proportions of retained and deleted.
+
+## What a tree can do
+
+- It finds [interactions]{.hl} by itself: the split below a split applies only to the tokens in that branch
+- It handles non-linear effects, categorical predictors and outliers without any transformation
+- Its predictions are steps: inside each final group, the [leaf]{.hl}, every token gets the same prediction
+
+## Trees overfit
+
+```{r overfit, echo = FALSE, fig.height = 3.0}
+train <- filter(td, speaker %in% sprintf("S%02d", 1:30))
+test <- filter(td, !speaker %in% sprintf("S%02d", 1:30))
+acc <- function(pred, obs) mean(pred == obs)
+deep <- rpart(f, data = train, method = "class", control = rpart.control(cp = 0, minsplit = 2, minbucket = 1, xval = 0))
+small <- rpart(f, data = train, method = "class", control = rpart.control(maxdepth = 3))
+rf_split <- ranger(f, data = train, num.trees = 500, seed = 1)
+tibble(model = rep(c("Deep tree", "Tree, depth 3", "Random forest"), each = 2),
+       data = rep(c("Training speakers", "New speakers"), 3),
+       accuracy = c(acc(predict(deep, train, type = "class"), train$deleted),
+                    acc(predict(deep, test, type = "class"), test$deleted),
+                    acc(predict(small, train, type = "class"), train$deleted),
+                    acc(predict(small, test, type = "class"), test$deleted),
+                    acc(predict(rf_split, train)$predictions, train$deleted),
+                    acc(predict(rf_split, test)$predictions, test$deleted))) |>
+  mutate(model = fct_inorder(model), data = fct_inorder(data)) |>
+  ggplot(aes(x = model, y = accuracy, fill = data)) +
+  geom_col(position = position_dodge(width = 0.7), width = 0.6) +
+  geom_text(aes(label = round(accuracy, 2)), position = position_dodge(width = 0.7), vjust = -0.4, colour = mist, size = 5) +
+  scale_fill_manual(values = c(pandan, kingfisher)) +
+  scale_y_continuous(limits = c(0, 1.1), breaks = seq(0, 1, 0.25)) +
+  labs(x = NULL, y = "Accuracy", fill = NULL) +
+  theme(legend.position = "right")
+```
+
+Trained on 30 speakers, tested on 10 new ones. A deep tree learns the noise of its training data, and a small tree misses real structure. Small changes in the data can also change a tree completely.
+
+# From trees to forests
+
+::: {.fact}
+`Did you know:` the leaf technique is found only in some orangutan populations, while kiss squeaks themselves are universal. Hardus and colleagues see it as a [cultural]{.hl} variant.
+
+_Source: Hardus et al. (2009), Proceedings of the Royal Society B_
+:::
+
+## Bagging
+
+[Bagging]{.hl}, short for bootstrap aggregating, grows many deep trees, each on a [bootstrap sample]{.hl}: as many observations as in the data, drawn with replacement (Breiman, 1996). Each tree overfits in its own way, and averaging their votes cancels much of that noise.
+
+. . .
+
+But if one predictor is very strong, every tree starts with the same split, and the trees stay similar to each other.
+
+## Random forests
+
+A [random forest]{.hl} adds one more source of randomness (Breiman, 2001). At each split, a tree may only choose among a random subset of the predictors.
+
+- The size of the subset is `mtry`. In `{ranger}` the default is the square root of the number of predictors, rounded down: 3 of our 9
+- Weaker predictors get their chance to split, so the trees differ more, and their average predicts better
+
+## Fitting a forest {.smaller}
+
+```{r}
+rf <- ranger(f, data = td, num.trees = 1000, importance = "permutation", seed = 1)
+rf
+```
+
+## Out-of-bag error
+
+A bootstrap sample leaves out about a third of the observations (on average 1 − 1/e ≈ 37%). Each tree can therefore be tested on the tokens it never saw, its [out-of-bag]{.hl} (OOB) tokens.
+
+- The OOB prediction for a token is the vote of the trees that did not train on it
+- The OOB prediction error, here `r round(rf$prediction.error, 3)`, estimates the error on new data without a separate test set
+- Compare it with a baseline: always guessing the more common outcome would be wrong `r round(1 - max(prop.table(table(td$deleted))), 3)` of the time
+
+## Tuning
+
+```{r mtry, echo = FALSE, fig.height = 2.6}
+tibble(mtry = 1:9) |>
+  mutate(oob = map_dbl(mtry, \(m) ranger(f, data = td, num.trees = 500, mtry = m, seed = 1)$prediction.error)) |>
+  ggplot(aes(x = mtry, y = oob)) +
+  geom_line(colour = muted) +
+  geom_point(aes(colour = mtry == 3), size = 3.5, show.legend = FALSE) +
+  scale_colour_manual(values = c(pandan, kingfisher)) +
+  scale_x_continuous(breaks = 1:9) +
+  labs(x = "mtry", y = "OOB error")
+```
+
+- `num.trees`: more trees never hurt, they only take longer. Use enough that results do not change between seeds
+- `mtry` and `min.node.size` matter more. The defaults are often close to the best values, as here (the default in orange)
+
+# Variable importance
+
+::: {.fact}
+`Did you know:` in 2022, a wild Sumatran orangutan called Rakus chewed the leaves of a climbing plant used in traditional medicine and applied them to a [wound]{.hl} on his face. The wound closed within five days.
+
+_Source: Laumer et al. (2024), Scientific Reports_
+:::
+
+## Permutation importance
+
+A forest has no coefficients. To see which predictors it relies on, shuffle one predictor at a time and measure how much the OOB accuracy drops.
+
+- A predictor the forest uses gives a large drop: its [permutation importance]{.hl}
+- A useless predictor gives a drop around zero, sometimes slightly negative
+- The scale has no fixed meaning; only the ranking and the distance from zero do
+
+## Two kinds of importance
+
+```{r importance, echo = FALSE, fig.height = 3.2}
+rf_imp <- ranger(f, data = td, num.trees = 1000, importance = "impurity", seed = 1)
+bind_rows(`Permutation importance` = enframe(rf$variable.importance),
+          `Impurity importance` = enframe(rf_imp$variable.importance), .id = "type") |>
+  mutate(value = value / max(value), .by = type) |>
+  mutate(name = fct_reorder(name, value, .fun = max)) |>
+  ggplot(aes(x = value, y = name)) +
+  geom_col(fill = kingfisher, width = 0.65) +
+  facet_wrap(~ type) +
+  labs(x = "Importance, relative to the largest", y = NULL)
+```
+
+[Impurity importance]{.hl} adds up how much each predictor improved the splits. It is fast, but it favours continuous predictors and factors with many levels (Strobl et al., 2007). Compare `noise_cont` and `noise_bin`: both are noise.
+
+## Correlated predictors
+
+Education has no effect in our data. Whatever importance it gets comes from its correlation with age: shuffling `education` breaks that link, and the forest loses some of the information it took from the pair.
+
+- Permutation importance is [marginal]{.hl}: it credits a predictor for what it shares with others
+- [Conditional]{.hl} permutation importance shuffles a predictor only within groups of similar values of the correlated predictors, so it asks what a predictor adds on top of the others (Strobl et al., 2008; Debeer & Strobl, 2020). In `R`: `permimp::permimp()` on a forest from `party::cforest()`
+
+## Partial dependence {.smaller}
+
+A [partial dependence plot]{.hl} sets every token to the same value of one predictor, predicts, averages, and repeats for each value (Friedman, 2001).
+
+```{r}
+rf_prob <- ranger(f, data = td, num.trees = 500, probability = TRUE, seed = 1)
+partial <- function(model, data, var, values) {
+  map(values, \(v) {
+    data[[var]] <- v
+    tibble(value = v, p = mean(predict(model, data)$predictions[, "deleted"]))
+  }) |> list_rbind()
+}
+```
+
+## The effect of age
+
+```{r pdp, echo = FALSE, fig.height = 3.0}
+partial(rf_prob, td, "age", seq(18, 80, by = 2)) |>
+  ggplot(aes(x = value, y = p)) +
+  geom_line(colour = kingfisher, linewidth = 1.3) +
+  labs(x = "Age", y = "P(deleted)")
+```
+
+The forest found the drop around 45 without being told its shape.
+
+## Interactions
+
+```{r pdp-rate, echo = FALSE, fig.height = 2.9}
+crossing(following = levels(td$following), rate = seq(3.5, 6.5, by = 0.25)) |>
+  mutate(p = map2_dbl(following, rate, \(fo, r) {
+    d <- td
+    d$following <- factor(fo, levels = levels(td$following))
+    d$rate <- r
+    mean(predict(rf_prob, d)$predictions[, "deleted"])
+  })) |>
+  ggplot(aes(x = rate, y = p, colour = following)) +
+  geom_line(linewidth = 1.3) +
+  scale_colour_manual(values = c(kingfisher, hornbill, pandan)) +
+  labs(x = "Speech rate (syllables per second)", y = "P(deleted)", colour = "Following") +
+  theme(legend.position = "right")
+```
+
+Before a consonant, deletion rises with speech rate; elsewhere it hardly changes. Partial dependence curves are flatter than the true effects, because forests average many step functions.
+
+# Forests and regression models
+
+::: {.fact}
+`Did you know:` wild orangutans have the longest interbirth intervals of any mammal. Across seven field sites, mothers gave birth on average every [7.6 years]{.hl}.
+
+_Source: van Noordwijk et al. (2018), Journal of Human Evolution_
+:::
+
+## What forests are good at
+
+- Many predictors, including correlated ones, and more predictors than observations
+- Interactions and non-linear effects that nobody thought to put in a formula
+- Prediction, with an honest estimate of the error from the OOB data
+
+## What forests do not give you
+
+- No coefficients, standard errors or p-values. Importance is a ranking, and says nothing about the direction or shape of an effect
+- No random effects. Tokens from the same speaker are not independent, and the OOB error ignores that: a forest can recognise speakers instead of learning patterns that generalise (next lecture)
+- The results depend on the seed, the settings and the importance measure, so they need to be reported in full
+
+## Both together
+
+Tagliamonte and Baayen (2012) analysed _was/were_ variation in York with a mixed-effects logistic regression, a conditional inference tree and a random forest. The forest ranked the predictors, including a correlated set that the regression could not handle together, and the regression estimated the effects with a random effect for speaker.
+
+. . .
+
+A common workflow: use a forest to explore which predictors matter and how, then test specific hypotheses with a (mixed) regression model.
+
+## Reporting
+
+> We fitted a random forest with 1,000 trees (`{ranger}`; Wright & Ziegler, 2017) to predict deletion from nine predictors, with `mtry = 3` and a minimum node size of 1. The OOB error was `r round(rf$prediction.error, 2)`, against `r round(1 - max(prop.table(table(td$deleted))), 2)` for always predicting the more frequent outcome. Variable importance was assessed by permutation.
+
+. . .
+
+Add the seed, how importance changed between seeds, and partial dependence plots for the predictors you discuss.
+
+## Summary
+
+::: {.takeaway}
+- A [decision tree]{.hl} splits the data with one predictor at a time; it finds interactions but overfits and is unstable
+- A [random forest]{.hl} averages many trees grown on bootstrap samples, each split choosing among `mtry` random predictors
+- The [OOB error]{.hl} estimates prediction error; always compare it with the majority-class baseline
+- Use [permutation importance]{.hl} over impurity importance, and conditional importance when predictors are correlated
+- Partial dependence plots show the direction and shape of effects; regression models still give you effect sizes and random effects
+:::
+
+## References {.refs}
+
+- Breiman, L. (1996). Bagging predictors. _Machine Learning_, 24(2), 123–140.
+- Breiman, L. (2001). Random forests. _Machine Learning_, 45(1), 5–32.
+- Debeer, D., & Strobl, C. (2020). Conditional permutation importance revisited. _BMC Bioinformatics_, 21, 307.
+- Friedman, J. H. (2001). Greedy function approximation: A gradient boosting machine. _Annals of Statistics_, 29(5), 1189–1232.
+- Strobl, C., Boulesteix, A.-L., Zeileis, A., & Hothorn, T. (2007). Bias in random forest variable importance measures: Illustrations, sources and a solution. _BMC Bioinformatics_, 8, 25.
+- Strobl, C., Boulesteix, A.-L., Kneib, T., Augustin, T., & Zeileis, A. (2008). Conditional variable importance for random forests. _BMC Bioinformatics_, 9, 307.
+- [Strobl, C., Malley, J., & Tutz, G. (2009). An introduction to recursive partitioning: Rationale, application, and characteristics of classification and regression trees, bagging, and random forests. _Psychological Methods_, 14(4), 323–348.]{.hl}
+- Tagliamonte, S. A., & Baayen, R. H. (2012). Models, forests, and trees of York English: _Was/were_ variation as a case study for statistical practice. _Language Variation and Change_, 24(2), 135–178.
+- Wright, M. N., & Ziegler, A. (2017). ranger: A fast implementation of random forests for high dimensional data in C++ and R. _Journal of Statistical Software_, 77(1), 1–17.
+
+## Sources of the animal facts {.refs}
+
+- Hardus, M. E., Lameira, A. R., van Schaik, C. P., & Wich, S. A. (2009). Tool use in wild orang-utans modifies sound production: A functionally deceptive innovation? _Proceedings of the Royal Society B_, 276(1673), 3689–3694. https://doi.org/10.1098/rspb.2009.1027
+- Laumer, I. B., Rahman, A., Rahmaeti, T., Azhari, U., Hermansyah, Atmoko, S. S. U., & Schuppli, C. (2024). Active self-treatment of a facial wound with a biologically active plant by a male Sumatran orangutan. _Scientific Reports_, 14, 8932. https://doi.org/10.1038/s41598-024-58988-7
+- van Noordwijk, M. A., Atmoko, S. S. U., Knott, C. D., Kuze, N., Morrogh-Bernard, H. C., Oram, F., Schuppli, C., van Schaik, C. P., & Willems, E. P. (2018). The slow ape: High infant survival and long interbirth intervals in wild orangutans. _Journal of Human Evolution_, 125, 38–49. https://doi.org/10.1016/j.jhevol.2018.09.004
+
+## Slides and code
+
+<div class="qr-block">
+<img src="`r qr_uri`" alt="QR code linking to these slides">
+<div>
+<p>These slides</p>
+<p class="qr-link">mcanzi.github.io/ss27_advanced_statistics/<wbr>`r lecture_file`</p>
+<p>Code and all lectures</p>
+<p class="qr-link">github.com/mcanzi/ss27_advanced_statistics</p>
+</div>
+</div>
