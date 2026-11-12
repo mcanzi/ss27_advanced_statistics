@@ -1,9 +1,11 @@
 /* theme-buttercup.css
-   The theme of Advanced Statistics for {revealjs}: slate blue and ice,
+   The glacier theme of mcanzi.github.io for {revealjs}: slate blue and ice,
    salmon for accents, a faint film grain, a soft vignette and glacier
-   buttercups over the background (white when young, salmon when older,
-   as on the real plant). Same rules as the purple theme of ws27_fss;
-   only the palette and the background differ. */
+   buttercups drawn in ink over the background (white when young, salmon
+   when older, as on the real plant).
+   The theme of Advanced Statistics. Same rules as theme-dark.css
+   (ws26_statistics) and theme-sunset.css (ws27_fss); only the palette, the
+   background and the faint glow on the headings (at the end) differ. */
 
 /* ---- fonts: the website's own files (fonts/, licences: fonts/OFL-*.txt).
    Pandoc embeds them in the HTML, so the slides need no internet and send
