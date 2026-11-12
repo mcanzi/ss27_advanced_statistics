@@ -428,7 +428,7 @@ Neighbouring residuals are correlated, so the confidence intervals above are too
 <img src="`r qr_uri`" alt="QR code linking to these slides">
 <div>
 <p>These slides</p>
-<p class="qr-link">mcanzi.github.io/ss27_advanced_statistics/<wbr>`r lecture_file`</p>
+<p class="qr-link">mcanzi.de/ss27_advanced_statistics/<wbr>`r lecture_file`</p>
 <p>Code and all lectures</p>
 <p class="qr-link">github.com/mcanzi/ss27_advanced_statistics</p>
 </div>

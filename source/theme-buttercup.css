@@ -1,5 +1,5 @@
 /* theme-buttercup.css
-   The glacier theme of mcanzi.github.io for {revealjs}: slate blue and ice,
+   The glacier theme of mcanzi.de for {revealjs}: slate blue and ice,
    salmon for accents, a faint film grain, a soft vignette and glacier
    buttercups drawn in ink over the background (white when young, salmon
    when older, as on the real plant).
@@ -85,7 +85,7 @@
 
 /* ---- canvas: the background drawing, faint, in tiles ---------------
    The tile is a 600 x 600 SVG of glacier buttercups, leaves and loose
-   petals drawn in ink (img/motifs/buttercup.svg on mcanzi.github.io),
+   petals drawn in ink (img/motifs/buttercup.svg on mcanzi.de),
    with its opacity built in. */
 
 .reveal-viewport,
@@ -203,7 +203,7 @@ body {
 
 /* the title of the title slide and of the section slides: a gradient from
    --title-top to --title-bottom (set with the palette above), as the name
-   and the page titles on mcanzi.github.io */
+   and the page titles on mcanzi.de */
 .reveal #title-slide h1.title,
 .reveal section.title-slide.level1 > h1 {
   background: linear-gradient(180deg, var(--title-top) 8%, var(--title-bottom) 92%);

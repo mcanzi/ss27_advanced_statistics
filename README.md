@@ -15,11 +15,11 @@ Slides for *Advanced Statistics* (Dr Massimiliano Canzi, Department of Linguisti
 | 9 | Factor analysis (in preparation) |
 | 10 | Cluster analysis (in preparation) |
 
-The slides are online at [mcanzi.github.io/ss27_advanced_statistics](https://mcanzi.github.io/ss27_advanced_statistics/01_refresher.html).
+The slides are online at [mcanzi.de/ss27_advanced_statistics](https://mcanzi.de/ss27_advanced_statistics/01_refresher.html).
 
 ## Rendering the slides
 
-Knit `source/render_all.Rmd` to render every session into `docs`, which GitHub Pages serves. Knitting a single session also writes its HTML into `docs`. All sessions use the glacier theme of mcanzi.github.io (`source/theme-buttercup.css`): slate blue and ice, salmon accents, and glacier buttercups drawn in ink in the background. `source/slides_setup.R` sets the plot colours to match it. The fonts are in `source/fonts` and are embedded in each HTML file.
+Knit `source/render_all.Rmd` to render every session into `docs`, which GitHub Pages serves. Knitting a single session also writes its HTML into `docs`. All sessions use the glacier theme of mcanzi.de (`source/theme-buttercup.css`): slate blue and ice, salmon accents, and glacier buttercups drawn in ink in the background. `source/slides_setup.R` sets the plot colours to match it. The fonts are in `source/fonts` and are embedded in each HTML file.
 
 Requires `tidyverse`, `revealjs`, `broom`, `lme4`, `lmerTest`, `patchwork`, `ggeffects`, `ggrepel`, `ggridges`, `mgcv`, `tidygam`, `itsadug`, `rpart`, `ranger` and `simr`; optional: `qrcode` (QR codes), `ragg` and `systemfonts` (Atkinson Hyperlegible in the figures).
 
