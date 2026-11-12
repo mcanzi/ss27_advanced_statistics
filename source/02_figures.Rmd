@@ -55,7 +55,7 @@ _Source: Mills et al. (2013), PNAS_
 
 ## Why two lectures on figures
 
-You have made plots with `ggplot2` before, in Statistics (for Linguists) or in the data visualisation workshop. This lecture and the next one go through the basics quickly and spend the time on what makes a figure good enough for a thesis or a paper.
+You have made plots with `ggplot2` before, in Statistics or in the data visualisation workshop. This lecture and the next one go through the basics quickly and spend the time on what makes a figure good enough for a thesis or a paper.
 
 . . .
 

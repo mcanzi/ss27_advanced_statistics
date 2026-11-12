@@ -56,7 +56,7 @@ _Sources: Aubin & Jouventin (1998), Proceedings of the Royal Society B; Howlett 
 
 ## Why a refresher
 
-This course builds on Statistics (for Linguists). Before we add anything new, we go once through the models from that course, in the order we met them: one predictor, several predictors, interactions, and mixed models.
+This course builds on Statistics. Before we add anything new, we go once through the models from that course, in the order we met them: one predictor, several predictors, interactions, and mixed models.
 
 . . .
 
