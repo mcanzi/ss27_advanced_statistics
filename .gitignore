@@ -1,2 +1,5 @@
 source/*_cache/
 source/*_files/
+docs/*_files/
+.DS_Store
+source/render_all.html
