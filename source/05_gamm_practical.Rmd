@@ -80,7 +80,7 @@ participants <- tibble(participant = sprintf("P%02d", 1:24),
 trials <- crossing(participants, condition = c("quiet", "noise"), trial = 1:12) |>
   mutate(trial_id = paste(participant, condition, trial, sep = "."),
          t_amp = rnorm(n(), 0, 40), t0 = rnorm(n(), 0, 15))
-pupil <- crossing(trials, time = seq(0, 3000, by = 100)) |>
+pdata <- crossing(trials, time = seq(0, 3000, by = 100)) |>
   arrange(trial_id, time) |>
   mutate(peak = 180 + p_amp + if_else(condition == "noise", 90 + p_noise, 0) + t_amp - 4 * (trial - 6.5),
          latency = 1200 + p_lat + if_else(condition == "noise", 250, 0),
@@ -95,7 +95,7 @@ pupil <- crossing(trials, time = seq(0, 3000, by = 100)) |>
 
 ## Task 1: look at the data
 
-1. Run the code on the previous slide and look at `pupil`. How many rows are there, and how many trajectories?
+1. Run the code on the previous slide and look at `pdata`. How many rows are there, and how many trajectories?
 2. Compute the mean pupil size per participant, condition and time bin
 3. Plot one line per participant, with a panel for each condition
 
@@ -106,7 +106,7 @@ Before fitting anything, write down what you expect the model to find.
 ## Checkpoint 1
 
 ```{r check-1, echo = FALSE, fig.height = 3.4}
-pupil |>
+pdata |>
   summarise(pupil = mean(pupil), .by = c(participant, condition, time)) |>
   ggplot(aes(x = time, y = pupil, group = participant)) +
   geom_line(colour = kingfisher, alpha = 0.6) +
@@ -114,7 +114,7 @@ pupil |>
   labs(x = "Time from sentence onset (ms)", y = "Pupil size (arbitrary units)")
 ```
 
-`r nrow(pupil)` rows and `r n_distinct(pupil$trial_id)` trajectories. In noise, the response tends to be larger and later, with a lot of variation between participants.
+`r nrow(pdata)` rows and `r n_distinct(pdata$trial_id)` trajectories. In noise, the response tends to be larger and later, with a lot of variation between participants.
 
 # Building the model
 
@@ -127,10 +127,10 @@ _Source: Banks et al. (2015), Science Advances_
 ## Task 2: a first GAM
 
 ```{r, eval = FALSE}
-pupil$condition_o <- as.ordered(pupil$condition)
-contrasts(pupil$condition_o) <- "contr.treatment"
+pdata$condition_o <- as.ordered(pdata$condition)
+contrasts(pdata$condition_o) <- "contr.treatment"
 m_gam <- bam(pupil ~ ___ + s(time, k = 20) + s(time, by = ___, k = 20),
-             data = pupil, method = "ML")
+             data = pdata, method = "ML")
 summary(m_gam)
 ```
 
@@ -139,10 +139,10 @@ summary(m_gam)
 - Is `k = 20` enough? Check with `k.check()`
 
 ```{r task-2, include = FALSE}
-pupil$condition_o <- as.ordered(pupil$condition)
-contrasts(pupil$condition_o) <- "contr.treatment"
+pdata$condition_o <- as.ordered(pdata$condition)
+contrasts(pdata$condition_o) <- "contr.treatment"
 m_gam <- bam(pupil ~ condition_o + s(time, k = 20) + s(time, by = condition_o, k = 20),
-             data = pupil, method = "ML")
+             data = pdata, method = "ML")
 ```
 
 ## Task 3: is anything left in the residuals?
@@ -165,20 +165,20 @@ The same function as in lecture 4. Compute the autocorrelation of the residuals 
 Every participant heard both conditions, so the comparison is [within]{.hl} participants. Participants can differ in their curves and also in how noise changes their curves.
 
 ```{r, eval = FALSE}
-pupil$part_cond <- interaction(pupil$participant, pupil$condition)
+pdata$part_cond <- interaction(pdata$participant, pdata$condition)
 m_rs <- bam(pupil ~ condition_o + s(time, k = 20) + s(time, by = condition_o, k = 20) +
               s(time, ___, bs = "fs", m = 1, k = 5),
-            data = pupil, method = "ML")
+            data = pdata, method = "ML")
 ```
 
 - Why `part_cond` and not `participant`? Look back at "The random slope equivalent" in lecture 4
 - How many levels does `part_cond` have, and how many coefficients do the random smooths add?
 
 ```{r task-4, include = FALSE}
-pupil$part_cond <- interaction(pupil$participant, pupil$condition)
+pdata$part_cond <- interaction(pdata$participant, pdata$condition)
 m_rs <- bam(pupil ~ condition_o + s(time, k = 20) + s(time, by = condition_o, k = 20) +
               s(time, part_cond, bs = "fs", m = 1, k = 5),
-            data = pupil, method = "ML")
+            data = pdata, method = "ML")
 ```
 
 ## Task 5: an AR1 error model
@@ -187,7 +187,7 @@ m_rs <- bam(pupil ~ condition_o + s(time, k = 20) + s(time, by = condition_o, k 
 rho <- itsadug::start_value_rho(m_rs)
 m_ar <- bam(pupil ~ condition_o + s(time, k = 20) + s(time, by = condition_o, k = 20) +
               s(time, part_cond, bs = "fs", m = 1, k = 5),
-            data = pupil, method = "ML", AR.start = ___, rho = rho)
+            data = pdata, method = "ML", AR.start = ___, rho = rho)
 ```
 
 1. Mark the first bin of every trajectory in `AR.start`. Is the data frame sorted the way the AR1 model needs?
@@ -197,7 +197,7 @@ m_ar <- bam(pupil ~ condition_o + s(time, k = 20) + s(time, by = condition_o, k 
 rho <- itsadug::start_value_rho(m_rs)
 m_ar <- bam(pupil ~ condition_o + s(time, k = 20) + s(time, by = condition_o, k = 20) +
               s(time, part_cond, bs = "fs", m = 1, k = 5),
-            data = pupil, method = "ML", AR.start = pupil$time == 0, rho = rho)
+            data = pdata, method = "ML", AR.start = pdata$time == 0, rho = rho)
 ```
 
 ## Checkpoint 2
@@ -206,7 +206,7 @@ m_ar <- bam(pupil ~ condition_o + s(time, k = 20) + s(time, by = condition_o, k 
 list(`GAM` = residuals(m_gam),
      `+ random smooths` = residuals(m_rs),
      `+ AR1` = m_ar$std.rsd) |>
-  imap(\(r, name) mutate(resid_acf(r, pupil$trial_id), model = name)) |>
+  imap(\(r, name) mutate(resid_acf(r, pdata$trial_id), model = name)) |>
   list_rbind() |>
   mutate(model = fct_inorder(model)) |>
   ggplot(aes(x = lag, y = acf)) +
@@ -243,7 +243,7 @@ Before you run it, decide what the null model must keep from `m_ar`, and what mu
 
 ```{r task-7, include = FALSE}
 m_null <- bam(pupil ~ s(time, k = 20) + s(time, part_cond, bs = "fs", m = 1, k = 5),
-              data = pupil, method = "ML", AR.start = pupil$time == 0, rho = rho)
+              data = pdata, method = "ML", AR.start = pdata$time == 0, rho = rho)
 ```
 
 ## Task 8: plot the results
@@ -297,7 +297,7 @@ The simulation has one more effect built in: the pupil response gets smaller ove
 m_trial <- bam(pupil ~ condition_o + s(time, k = 20) + s(time, by = condition_o, k = 20) +
                  s(trial, k = 5) + ti(time, trial, k = c(10, 5)) +
                  s(time, part_cond, bs = "fs", m = 1, k = 5),
-               data = pupil, method = "ML", AR.start = pupil$time == 0, rho = rho)
+               data = pdata, method = "ML", AR.start = pdata$time == 0, rho = rho)
 itsadug::compareML(m_ar, m_trial)
 ```
 
