@@ -1,0 +1,422 @@
+---
+title: "Power analysis"
+subtitle: "Planning sample sizes by simulation"
+author: "Dr Massimiliano Canzi"
+knit: (function(input, ...) rmarkdown::render(input, output_dir = file.path(dirname(input), "..", "docs")))
+output:
+  revealjs::revealjs_presentation:
+    theme: black
+    css: theme-buttercup.css
+    highlight: zenburn
+    mathjax: null
+    incremental: true
+    transition: fade
+    background_transition: fade
+    self_contained: true
+    reveal_options:
+      width: 1050
+      height: 700
+      slideNumber: "c/t"
+      showSlideNumber: all
+      controls: true
+      touch: true
+      transitionSpeed: fast
+      navigationMode: linear
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                      comment = "",
+                      fig.width = 10, fig.height = 4.4, out.width = "100%")
+
+library(tidyverse)
+library(simr)
+
+source("slides_setup.R", local = knitr::knit_global())
+
+simrOptions(progress = FALSE)
+options(width = 70, pillar.print_min = 4, pillar.print_max = 4)
+```
+
+# Power analysis
+
+<style>
+  :root {
+    --footer-text:  "Power analysis";
+    --qr:           `r qr_css`;
+    --lecture:      `r lecture_label`;
+  }
+</style>
+
+::: {.fact}
+`Did you know:` the peacock mantis shrimp smashes snail shells with a club that reaches [14 to 23 metres per second]{.hl}. The energy for the strike is stored in a saddle-shaped spring in its limb.
+
+_Source: Patek, Korff & Caldwell (2004), Nature_
+:::
+
+## Where we are
+
+Every data set in this course so far was simulated. We chose the true effects, generated the data, and checked whether the model found them again.
+
+. . .
+
+Today we turn that around. Before a study is run, the same kind of simulation can tell us how often a planned design would detect an effect of a given size: its [power]{.hl}. From there we can work out how many participants and items we need.
+
+## Today
+
+1. What power is
+2. Power by simulation
+3. Power with `{simr}`
+4. Why post hoc power tells us nothing
+
+# What power is
+
+::: {.fact}
+`Did you know:` a mantis shrimp strike hits twice. The club strikes first, and about 0.4 ms later the collapse of [cavitation bubbles]{.hl} between club and shell delivers a second force peak.
+
+_Source: Patek & Caldwell (2005), Journal of Experimental Biology_
+:::
+
+## Four outcomes
+
+| | No true effect | True effect |
+|:--|:--|:--|
+| p < .05 | Type I error (α, usually 5%) | correct: the probability is the [power]{.hl} |
+| p ≥ .05 | correct | Type II error (β) |
+
+. . .
+
+Power = 1 − β: the probability that a test rejects the null hypothesis when an effect of a given size exists. The usual target of 80% is an arbitrary convention (Green & MacLeod, 2016).
+
+## What power depends on
+
+- The size of the effect we want to detect
+- The noise around it: residual variance, and in mixed models the variances of participants and items
+- The number of participants, the number of items, and observations per participant and item
+- The α level and the test
+
+. . .
+
+Only the sample sizes are under our control once the design and the effect of interest are fixed.
+
+## Low power distorts estimates
+
+```{r filter, echo = FALSE, fig.height = 2.9}
+set.seed(2034)
+filter_sims <- map(1:2000, \(i) {
+  a <- rnorm(20, 0.3)
+  b <- rnorm(20, 0)
+  tibble(est = mean(a) - mean(b), p = t.test(a, b, var.equal = TRUE)$p.value)
+}) |>
+  list_rbind() |>
+  mutate(sig = if_else(p < 0.05, "p < .05", "p ≥ .05"))
+sig_mean <- mean(filter_sims$est[filter_sims$sig == "p < .05" & filter_sims$est > 0])
+ggplot(filter_sims, aes(x = est, fill = sig)) +
+  geom_histogram(binwidth = 0.05, boundary = 0) +
+  geom_vline(xintercept = 0.3, colour = mist, linewidth = 1) +
+  geom_vline(xintercept = sig_mean, colour = mist, linetype = "dashed", linewidth = 1) +
+  scale_fill_manual(values = c(`p < .05` = kingfisher, `p ≥ .05` = vine)) +
+  labs(x = "Estimated difference (true difference: 0.3 SD)", y = "Studies", fill = NULL) +
+  theme(legend.position = "inside", legend.position.inside = c(0.12, 0.85))
+```
+
+2,000 simulated studies with 20 participants per group. Only `r round(100 * mean(filter_sims$p < 0.05))`% are significant, and the significant positive estimates average `r round(sig_mean, 2)` (dashed), `r round(sig_mean / 0.3, 1)` times the true effect (Gelman & Carlin, 2014).
+
+## The significance filter
+
+If only significant results get published, published effects from underpowered studies are too large. Vasishth et al. (2018) ran seven direct replications of a psycholinguistic finding, with 268 participants in total. The original estimates turned out too noisy to be informative, and a larger-sample study gave a smaller effect.
+
+. . .
+
+A power analysis based on a published effect size then promises more power than the next study will have.
+
+# Power by simulation
+
+::: {.fact}
+`Did you know:` peak impact forces of peacock mantis shrimp strikes reached [1,501 newtons]{.hl} in one study, thousands of times the animal's body weight.
+
+_Source: Patek & Caldwell (2005), Journal of Experimental Biology_
+:::
+
+## The recipe
+
+1. Write down the model, with values for every parameter: fixed effects, random-effect variances, residual variance
+2. Simulate a data set from it, with the planned sample size
+3. Fit the model to the simulated data and run the test
+4. Repeat many times. The proportion of significant tests estimates the power
+
+. . .
+
+Because the effect exists in every simulated data set, every non-significant result is a Type II error (Green & MacLeod, 2016).
+
+## A first example
+
+A two-group comparison with 30 participants per group and a true difference of 0.5 SD:
+
+```{r}
+sim_p <- function(n, d) t.test(rnorm(n, d), rnorm(n, 0), var.equal = TRUE)$p.value
+set.seed(1)
+p <- replicate(2000, sim_p(n = 30, d = 0.5))
+mean(p < 0.05)
+power.t.test(n = 30, delta = 0.5)$power
+```
+
+. . .
+
+The simulation agrees with the formula, up to simulation error.
+
+## A power curve
+
+```{r curve-t, echo = FALSE, fig.height = 3.1}
+set.seed(2)
+tibble(n = seq(10, 100, by = 10)) |>
+  mutate(Simulation = map_dbl(n, \(k) mean(replicate(1000, sim_p(k, 0.5)) < 0.05)),
+         Formula = map_dbl(n, \(k) power.t.test(n = k, delta = 0.5)$power)) |>
+  pivot_longer(c(Simulation, Formula), names_to = "method", values_to = "power") |>
+  ggplot(aes(x = n, y = power, colour = method, shape = method)) +
+  geom_hline(yintercept = 0.8, colour = muted, linetype = "dashed") +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  scale_colour_manual(values = c(Formula = pandan, Simulation = kingfisher)) +
+  scale_y_continuous(limits = c(0, 1)) +
+  labs(x = "Participants per group", y = "Power", colour = NULL, shape = NULL) +
+  theme(legend.position = "inside", legend.position.inside = c(0.85, 0.2))
+```
+
+For d = 0.5, about 64 participants per group reach 80% power.
+
+## Why simulate?
+
+- For a t-test, a formula is quicker. For participants and items as crossed random effects, random slopes, binary outcomes or GAMMs, there is no simple formula
+- Simulation works for any model that can be fitted, with the analysis we will actually run (Green & MacLeod, 2016; Brysbaert & Stevens, 2018)
+
+. . .
+
+Writing the simulation also forces us to state every assumption about effect sizes, variances and the design.
+
+# Power with `{simr}`
+
+::: {.fact}
+`Did you know:` some mantis shrimp have [12 types]{.hl} of colour photoreceptors, against three in humans. In tests, they still told colours apart worse than humans do.
+
+_Source: Thoen, How, Chiou & Marshall (2014), Science_
+:::
+
+## The plan
+
+We want to replicate the lexical decision study from lecture 1, and the question is the interaction: does word frequency matter more for L2 than for L1 speakers?
+
+- `{simr}` simulates from an `lmer()` or `glmer()` model, refits it and tests a fixed effect, many times (Green & MacLeod, 2016). The model can come from a [pilot study]{.hl}, or be built from scratch with `makeLmer()`
+- `fixef<-` sets the effect size; `extend()` and `powerCurve()` vary the sample size
+
+## A pilot study {.smaller}
+
+```{r}
+set.seed(2035)
+participants <- tibble(participant = factor(sprintf("P%02d", 1:30)),
+                       group = rep(c(-0.5, 0.5), 15),
+                       p0 = rnorm(30, 0, 60), p1 = rnorm(30, 0, 12))
+words <- tibble(word = factor(sprintf("w%02d", 1:40)),
+                freq_c = runif(40, 1, 6) - 3.5, w0 = rnorm(40, 0, 30))
+pilot <- crossing(participants, words) |>
+  mutate(rt = 750 + p0 + w0 + 120 * group + (-30 - 20 * group + p1) * freq_c + rnorm(n(), 0, 70)) |>
+  select(participant, group, word, freq_c, rt)
+m_pilot <- lmer(rt ~ freq_c * group + (1 + freq_c | participant) + (1 | word), data = pilot)
+round(fixef(m_pilot), 1)
+```
+
+`group` is coded −0.5 (L1) and 0.5 (L2), so `freq_c:group` is the difference between the two frequency slopes. The groups alternate, so any first _k_ participants are balanced.
+
+## Choosing the effect size
+
+The pilot estimate of the interaction is noisy, and it may be large by chance. Planning with it repeats the significance filter.
+
+. . .
+
+Instead, decide on the [smallest effect of interest]{.hl}: the smallest difference that would matter for the theory. Here we say the slopes should differ by at least 10 ms per log unit.
+
+```{r}
+fixef(m_pilot)["freq_c:group"] <- -10
+```
+
+Retrospective "observed power", with the effect size taken from the data, gives misleading results (Hoenig & Heisey, 2001; Green & MacLeod, 2016). More on this at the end.
+
+## Power for the pilot design {.smaller}
+
+```{r ps30, cache = TRUE}
+ps30 <- powerSim(m_pilot, test = fixed("freq_c:group", "z"), nsim = 200, seed = 1)
+ps30
+```
+
+. . .
+
+`r round(100 * summary(ps30)$mean)`% power for 30 participants and 40 words. The z-test is fast, which suits exploring designs, but it is too liberal with few participants. For the final calculation use `"sa"` (Satterthwaite) or `"kr"` (Kenward–Roger), and 1,000 simulations or more.
+
+## More participants or more words? {.smaller}
+
+```{r curves, cache = TRUE}
+m_part <- extend(m_pilot, along = "participant", n = 80)
+pc_part <- powerCurve(m_part, test = fixed("freq_c:group", "z"), along = "participant",
+                      breaks = c(10, 20, 30, 40, 60, 80), nsim = 100, seed = 1)
+m_word <- extend(m_pilot, along = "word", n = 120)
+pc_word <- powerCurve(m_word, test = fixed("freq_c:group", "z"), along = "word",
+                      breaks = c(20, 40, 60, 80, 120), nsim = 100, seed = 1)
+```
+
+`extend()` adds new participants (or words) by copying the design of existing ones, and `powerCurve()` fits the model to the first 10, 20, … of them.
+
+## Two power curves
+
+```{r curves-plot, echo = FALSE, fig.height = 3.0}
+pc_tab <- function(pc) {
+  s <- summary(pc)
+  tibble(n = s$nlevels, power = s$mean, lower = s$lower, upper = s$upper)
+}
+bind_rows(`More participants (40 words)` = pc_tab(pc_part),
+          `More words (30 participants)` = pc_tab(pc_word), .id = "design") |>
+  ggplot(aes(x = n, y = power)) +
+  geom_hline(yintercept = 0.8, colour = muted, linetype = "dashed") +
+  geom_ribbon(aes(ymin = lower, ymax = upper), fill = kingfisher, alpha = 0.25) +
+  geom_line(colour = kingfisher, linewidth = 1.1) +
+  geom_point(colour = kingfisher, size = 2.5) +
+  facet_wrap(~ design, scales = "free_x") +
+  scale_y_continuous(limits = c(0, 1)) +
+  labs(x = "Number of participants or words", y = "Power (95% CI)")
+```
+
+The interaction compares groups of participants, and participants differ in their frequency slopes. Extra participants raise power much faster than extra words, which only make each participant's slope a little more precise.
+
+## From scratch {.smaller}
+
+Without a pilot study, `makeLmer()` builds the model from values we choose, for example from earlier studies:
+
+```{r}
+design <- select(pilot, participant, group, word, freq_c)
+m_scratch <- makeLmer(rt ~ freq_c * group + (1 + freq_c | participant) + (1 | word),
+                      fixef = c(750, -30, 120, -10),
+                      VarCorr = list(participant = matrix(c(60^2, 0, 0, 12^2), 2), word = 30^2),
+                      sigma = 70, data = design)
+```
+
+. . .
+
+The random-effect variances matter as much as the fixed effect. Because they are estimates too, try a plausible range and see how much the power changes.
+
+# Post hoc power
+
+::: {.fact}
+`Did you know:` mantis shrimp were the first animals shown to see [circularly polarised]{.hl} light. Some species also reflect it from body parts they display in courtship.
+
+_Source: Chiou et al. (2008), Current Biology_
+:::
+
+## What post hoc power is
+
+[Post hoc power]{.hl}, also called observed or retrospective power, is computed after a study, with the effect size estimated from its own data. Reviewers often ask for it (Heinsberg & Weeks, 2022).
+
+. . .
+
+The calculation is the same as in a power analysis. The next slides show why the result is still uninformative.
+
+## Two universities {.smaller}
+
+Heinsberg and Weeks (2022) simulated the same mouse experiment, run in parallel at two universities (n = 100 each), with different true effects.
+
+| | Estimate (95% CI) | p | Post hoc power | True effect | True power |
+|:--|:--|:--|:--|:--|:--|
+| A | 0.290 (−0.002, 0.582) | .052 | 0.584 | 0.402 | 0.841 |
+| B | 0.275 (−0.002, 0.553) | .052 | 0.537 | 0.201 | 0.322 |
+
+. . .
+
+The two studies look almost identical, and so does their post hoc power. Their true power is very different, and nothing in the data reveals it.
+
+## It only restates the p-value
+
+```{r posthoc, echo = FALSE, fig.height = 2.9}
+set.seed(2036)
+true_power <- power.t.test(n = 25, delta = 0.4)$power
+obs_power <- map(1:1000, \(i) {
+  a <- rnorm(25, 0.4)
+  b <- rnorm(25, 0)
+  d <- abs(mean(a) - mean(b)) / sqrt((var(a) + var(b)) / 2)
+  tibble(p = t.test(a, b, var.equal = TRUE)$p.value,
+         power = power.t.test(n = 25, delta = d)$power)
+}) |>
+  list_rbind()
+ggplot(obs_power, aes(x = p, y = power)) +
+  geom_hline(yintercept = true_power, colour = pandan, linewidth = 1) +
+  geom_vline(xintercept = 0.05, colour = muted, linetype = "dashed") +
+  geom_point(colour = kingfisher, alpha = 0.5, size = 1.6) +
+  annotate("text", x = 0.75, y = true_power + 0.07, label = "true power", colour = pandan, size = 5) +
+  labs(x = "p-value", y = "Post hoc power")
+```
+
+1,000 studies of the same design, all with `r round(100 * true_power)`% true power. Post hoc power falls on one curve of the p-value: about 50% at p = .05, and below 50% whenever p > .05 (Hoenig & Heisey, 2001).
+
+## Why it is uninformative
+
+- It treats the observed effect as the true effect, which is exactly what we do not know
+- It adds nothing to the p-value, and a non-significant result always comes with low post hoc power
+- It cannot tell a study that missed a real effect from a study of an effect that does not exist
+- Running `powerSim()` on your final model without changing the effect size computes the same thing
+
+## A reviewer asks
+
+You report a non-significant interaction. A reviewer asks for a post hoc power analysis "to show whether the study was underpowered".
+
+. . .
+
+How would you answer? What could you report instead that would help the reader judge the null result?
+
+## What to report instead
+
+- The estimate with its [confidence interval]{.hl}: it shows which effect sizes the data are compatible with
+- The power analysis you ran before the study, with the effect size you chose and why
+- A sensitivity analysis: the smallest effect the design had 80% power to detect. It uses the design and assumed variances, not the observed effect
+
+## Reporting a power analysis {.smaller}
+
+> We determined the sample size by simulation with `{simr}` (Green & MacLeod, 2016), using a linear mixed model with the structure of the planned analysis. The smallest interaction of interest was a difference of 10 ms per log unit between the frequency slopes of the two groups; the random-effect variances came from a pilot study. With 40 words, 60 participants gave an estimated power of `r round(100 * pc_tab(pc_part)$power[pc_tab(pc_part)$n == 60])`%.
+
+. . .
+
+Also report the test, the number of simulations (1,000 or more in a real study) and how you chose every value.
+
+## Summary
+
+::: {.takeaway}
+- [Power]{.hl} is the probability of detecting an effect of a given size with a given design
+- Underpowered studies miss real effects, and their significant results [exaggerate]{.hl} them
+- Simulation estimates power for any model: simulate, refit, test, repeat
+- With `{simr}`, set the smallest effect of interest with `fixef<-`, then vary participants and items with `extend()` and `powerCurve()`
+- Plan power before the study. [Post hoc power]{.hl} is a restatement of the p-value; report confidence intervals instead
+:::
+
+## References {.refs}
+
+- Brysbaert, M., & Stevens, M. (2018). Power analysis and effect size in mixed effects models: A tutorial. _Journal of Cognition_, 1(1), 9. https://doi.org/10.5334/joc.10
+- Gelman, A., & Carlin, J. (2014). Beyond power calculations: Assessing Type S (sign) and Type M (magnitude) errors. _Perspectives on Psychological Science_, 9(6), 641–651.
+- [Green, P., & MacLeod, C. J. (2016). SIMR: An R package for power analysis of generalized linear mixed models by simulation. _Methods in Ecology and Evolution_, 7(4), 493–498. https://doi.org/10.1111/2041-210X.12504]{.hl}
+- [Heinsberg, L. W., & Weeks, D. E. (2022). Post hoc power is not informative. _Genetic Epidemiology_, 46(7), 390–394. https://doi.org/10.1002/gepi.22464]{.hl}
+- Hoenig, J. M., & Heisey, D. M. (2001). The abuse of power: The pervasive fallacy of power calculations for data analysis. _The American Statistician_, 55(1), 19–24.
+- Vasishth, S., Mertzen, D., Jäger, L. A., & Gelman, A. (2018). The statistical significance filter leads to overoptimistic expectations of replicability. _Journal of Memory and Language_, 103, 151–175. https://doi.org/10.1016/j.jml.2018.07.004
+
+## Sources of the animal facts {.refs}
+
+- Chiou, T.-H., Kleinlogel, S., Cronin, T., Caldwell, R., Loeffler, B., Siddiqi, A., Goldizen, A., & Marshall, J. (2008). Circular polarization vision in a stomatopod crustacean. _Current Biology_, 18(6), 429–434. https://doi.org/10.1016/j.cub.2008.02.066
+- Patek, S. N., & Caldwell, R. L. (2005). Extreme impact and cavitation forces of a biological hammer: Strike forces of the peacock mantis shrimp _Odontodactylus scyllarus_. _Journal of Experimental Biology_, 208(19), 3655–3664. https://doi.org/10.1242/jeb.01831
+- Patek, S. N., Korff, W. L., & Caldwell, R. L. (2004). Deadly strike mechanism of a mantis shrimp. _Nature_, 428(6985), 819–820. https://doi.org/10.1038/428819a
+- Thoen, H. H., How, M. J., Chiou, T.-H., & Marshall, J. (2014). A different form of color vision in mantis shrimp. _Science_, 343(6169), 411–413. https://doi.org/10.1126/science.1245824
+
+## Slides and code
+
+<div class="qr-block">
+<img src="`r qr_uri`" alt="QR code linking to these slides">
+<div>
+<p>These slides</p>
+<p class="qr-link">mcanzi.github.io/ss27_advanced_statistics/<wbr>`r lecture_file`</p>
+<p>Code and all lectures</p>
+<p class="qr-link">github.com/mcanzi/ss27_advanced_statistics</p>
+</div>
+</div>
